@@ -1,0 +1,38 @@
+Crie um projeto Python chamado dark-content-radar.
+
+Objetivo:
+Monitorar oportunidades de canais dark no YouTube Shorts.
+
+Requisitos:
+1. Usar YouTube Data API para buscar vídeos recentes por palavras-chave.
+2. Salvar os resultados em SQLite.
+3. Coletar: video_id, title, channel_id, channel_title, published_at, views, likes, comments, duration, url, keyword.
+4. Calcular views_per_day.
+5. Criar um score de oportunidade com base em:
+   - views_per_day
+   - comments/views
+   - idade do vídeo
+   - presença de palavras de curiosidade/mistério/urgência no título
+6. Mostrar os top vídeos por nicho.
+7. Não usar scraping.
+8. Criar código modular dentro da pasta src/.
+9. Criar um app.py em Streamlit para visualizar os resultados.
+10. Usar .env para YOUTUBE_API_KEY.
+
+
+
+Ferramentas:
+Python
+SQLite
+YouTube Data API
+Gemini API
+Streamlit
+Telegram Bot ou Discord Webhook
+GitHub + Copilot/Codex para programar
+
+Score inicial simples:
+score =
+views_per_day * 0.6
++ comment_rate * 100000 * 0.2
++ freshness_score * 0.1
++ dark_friendly_score * 0.1
