@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
 from typing import List
+from datetime import datetime, timezone
 
 import isodate
 from googleapiclient.discovery import build
@@ -94,6 +94,11 @@ def search_recent_short_videos(
             {
                 "video_id": video_id,
                 "title": snippet.get("title", ""),
+                "description": snippet.get("description", ""),
+                "tags": snippet.get("tags", []),
+                "category_id": snippet.get("categoryId", ""),
+                "default_language": snippet.get("defaultLanguage", ""),
+                "default_audio_language": snippet.get("defaultAudioLanguage", ""),
                 "channel_id": snippet.get("channelId", ""),
                 "channel_title": snippet.get("channelTitle", ""),
                 "published_at": snippet.get("publishedAt", ""),

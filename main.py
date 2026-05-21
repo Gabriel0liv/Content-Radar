@@ -4,7 +4,12 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 
 from src.scorer import score_videos
-from src.storage import fetch_top_videos_balanced, init_db, upsert_videos
+from src.storage import (
+    fetch_top_videos_balanced,
+    init_ai_analysis_table,
+    init_db,
+    upsert_videos,
+)
 from src.youtube_collector import search_recent_short_videos
 
 KEYWORDS_BY_NICHE = {
@@ -59,6 +64,8 @@ def main():
         raise RuntimeError("Falta YOUTUBE_API_KEY no arquivo .env")
 
     init_db(db_path)
+    init_ai_analysis_table(db_path)
+
 
     published_after = datetime.now(timezone.utc) - timedelta(days=days_back)
 

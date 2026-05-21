@@ -75,6 +75,7 @@ with st.sidebar:
         "Mostrar apenas boas referências",
         value=False,
     )
+    st.caption("Esse filtro só funciona depois de rodar `python analyze.py`.")
 
 filtered = df[
     (df["niche"].isin(selected_niches))
@@ -82,8 +83,14 @@ filtered = df[
     & (df["views_per_day"] >= min_views_per_day)
 ].copy()
 
+has_ai_analyses = (
+    "is_good_reference" in df.columns
+    and df["is_good_reference"].notna().sum() > 0
+)
+
 if only_good_references:
-    filtered = filtered[filtered["is_good_reference"] == 1].copy()
+    if has_ai_analyses:
+        filtered = filtered[filtered["is_good_reference"] == 1].copy()
 
 
 def _format_ideas(value):
@@ -153,6 +160,7 @@ ai_columns = [
     "real_niche",
     "hook_type",
     "dark_channel_fit",
+    "production_priority_score",
     "production_difficulty",
     "copyright_risk",
     "reused_content_risk",
@@ -162,10 +170,11 @@ ai_columns = [
 
 available_ai_columns = [column for column in ai_columns if column in filtered.columns]
 
-if (
-    "is_good_reference" not in filtered.columns
-    or filtered["is_good_reference"].notna().sum() == 0
-):
+if only_good_references and not has_ai_analyses:
+    st.warning(
+        "O filtro 'Mostrar apenas boas referências' exige análises IA salvas. Rode `python analyze.py` primeiro."
+    )
+elif not has_ai_analyses:
     st.info("Ainda não existem análises IA salvas. Rode: python analyze.py")
 else:
     ai_df = filtered[
@@ -180,8 +189,13 @@ else:
     ].copy()
     st.dataframe(
         ai_df.sort_values(
-            by=["is_good_reference", "dark_channel_fit", "opportunity_score"],
-            ascending=[False, False, False],
+            by=[
+                "is_good_reference",
+                "production_priority_score",
+                "dark_channel_fit",
+                "opportunity_score",
+            ],
+            ascending=[False, False, False, False],
         ),
         use_container_width=True,
         hide_index=True,

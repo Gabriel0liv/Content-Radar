@@ -1,3 +1,4 @@
+import json
 import sqlite3
 from pathlib import Path
 from typing import Iterable
@@ -16,6 +17,11 @@ def init_db(db_path: str) -> None:
             CREATE TABLE IF NOT EXISTS videos (
                 video_id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                description TEXT,
+                tags TEXT,
+                category_id TEXT,
+                default_language TEXT,
+                default_audio_language TEXT,
                 channel_id TEXT,
                 channel_title TEXT,
                 published_at TEXT,
@@ -35,6 +41,11 @@ def init_db(db_path: str) -> None:
             )
             """)
         _ensure_column(conn, "videos", "niche_relevance_score", "REAL DEFAULT 0")
+        _ensure_column(conn, "videos", "description", "TEXT")
+        _ensure_column(conn, "videos", "tags", "TEXT")
+        _ensure_column(conn, "videos", "category_id", "TEXT")
+        _ensure_column(conn, "videos", "default_language", "TEXT")
+        _ensure_column(conn, "videos", "default_audio_language", "TEXT")
         conn.commit()
 
 
@@ -58,10 +69,17 @@ def init_ai_analysis_table(db_path: str) -> None:
                 fact_check_needed INTEGER,
                 opportunity_reason TEXT,
                 original_angle_ideas TEXT,
+                production_priority_score REAL DEFAULT 0,
                 raw_json TEXT,
                 FOREIGN KEY(video_id) REFERENCES videos(video_id)
             )
             """)
+        _ensure_column(
+            conn,
+            "ai_video_analysis",
+            "production_priority_score",
+            "REAL DEFAULT 0",
+        )
         conn.commit()
 
 
@@ -99,23 +117,40 @@ def _normalize_video_record(record: dict) -> dict:
 
 
 def upsert_videos(db_path: str, videos: Iterable[dict]) -> None:
+    payloads = []
+    for video in videos:
+        payload = dict(video)
+        tags = payload.get("tags")
+        if isinstance(tags, list):
+            payload["tags"] = json.dumps(tags, ensure_ascii=False)
+        elif tags is None:
+            payload["tags"] = json.dumps([], ensure_ascii=False)
+        payloads.append(payload)
+
     with get_connection(db_path) as conn:
         conn.executemany(
             """
             INSERT INTO videos (
-                video_id, title, channel_id, channel_title, published_at,
+                video_id, title, description, tags, category_id, default_language,
+                default_audio_language, channel_id, channel_title, published_at,
                 views, likes, comments, duration_seconds, url,
                 keyword, niche, views_per_day, comment_rate,
                 dark_friendly_score, niche_relevance_score, opportunity_score, collected_at
             )
             VALUES (
-                :video_id, :title, :channel_id, :channel_title, :published_at,
+                :video_id, :title, :description, :tags, :category_id, :default_language,
+                :default_audio_language, :channel_id, :channel_title, :published_at,
                 :views, :likes, :comments, :duration_seconds, :url,
                 :keyword, :niche, :views_per_day, :comment_rate,
                 :dark_friendly_score, :niche_relevance_score, :opportunity_score, :collected_at
             )
             ON CONFLICT(video_id) DO UPDATE SET
                 title = excluded.title,
+                description = excluded.description,
+                tags = excluded.tags,
+                category_id = excluded.category_id,
+                default_language = excluded.default_language,
+                default_audio_language = excluded.default_audio_language,
                 channel_id = excluded.channel_id,
                 channel_title = excluded.channel_title,
                 published_at = excluded.published_at,
@@ -133,7 +168,7 @@ def upsert_videos(db_path: str, videos: Iterable[dict]) -> None:
                 opportunity_score = excluded.opportunity_score,
                 collected_at = excluded.collected_at
             """,
-            list(videos),
+            payloads,
         )
         conn.commit()
 
@@ -163,6 +198,7 @@ def save_ai_analysis(db_path: str, analysis: dict) -> None:
                 fact_check_needed,
                 opportunity_reason,
                 original_angle_ideas,
+                production_priority_score,
                 raw_json
             )
             VALUES (
@@ -182,6 +218,7 @@ def save_ai_analysis(db_path: str, analysis: dict) -> None:
                 :fact_check_needed,
                 :opportunity_reason,
                 :original_angle_ideas,
+                :production_priority_score,
                 :raw_json
             )
             ON CONFLICT(video_id) DO UPDATE SET
@@ -200,6 +237,7 @@ def save_ai_analysis(db_path: str, analysis: dict) -> None:
                 fact_check_needed = excluded.fact_check_needed,
                 opportunity_reason = excluded.opportunity_reason,
                 original_angle_ideas = excluded.original_angle_ideas,
+                production_priority_score = excluded.production_priority_score,
                 raw_json = excluded.raw_json
             """,
             payload,
@@ -228,6 +266,7 @@ def get_ai_analysis(db_path: str, video_id: str) -> dict | None:
                 fact_check_needed,
                 opportunity_reason,
                 original_angle_ideas,
+                production_priority_score,
                 raw_json
             FROM ai_video_analysis
             WHERE video_id = ?
@@ -245,6 +284,11 @@ def fetch_top_videos(db_path: str, limit: int = 100) -> list[dict]:
             SELECT
                 video_id,
                 title,
+                description,
+                tags,
+                category_id,
+                default_language,
+                default_audio_language,
                 channel_id,
                 channel_title,
                 published_at,
@@ -274,6 +318,7 @@ def fetch_top_videos(db_path: str, limit: int = 100) -> list[dict]:
                 analysis.fact_check_needed,
                 analysis.opportunity_reason,
                 analysis.original_angle_ideas,
+                analysis.production_priority_score,
                 analysis.analyzed_at,
                 analysis.model
             FROM videos
@@ -298,6 +343,11 @@ def fetch_top_videos_balanced(
             SELECT
                 video_id,
                 title,
+                description,
+                tags,
+                category_id,
+                default_language,
+                default_audio_language,
                 channel_id,
                 channel_title,
                 published_at,
@@ -327,6 +377,7 @@ def fetch_top_videos_balanced(
                 analysis.fact_check_needed,
                 analysis.opportunity_reason,
                 analysis.original_angle_ideas,
+                analysis.production_priority_score,
                 analysis.analyzed_at,
                 analysis.model
             FROM videos
@@ -367,6 +418,11 @@ def fetch_videos_for_ai_analysis(db_path: str, limit: int = 20) -> list[dict]:
             SELECT
                 videos.video_id,
                 videos.title,
+                videos.description,
+                videos.tags,
+                videos.category_id,
+                videos.default_language,
+                videos.default_audio_language,
                 videos.channel_id,
                 videos.channel_title,
                 videos.published_at,

@@ -13,6 +13,40 @@ from src.storage import (
 )
 
 
+def calculate_production_priority_score(video: dict, analysis: dict) -> float:
+    language_bonus = {
+        "pt": 10,
+        "unknown": 3,
+    }.get(analysis.get("detected_language"), 0)
+    risk_penalty = {
+        "low": 0,
+        "medium": 10,
+        "high": 25,
+    }.get(analysis.get("copyright_risk"), 10) + {
+        "low": 0,
+        "medium": 10,
+        "high": 25,
+    }.get(analysis.get("reused_content_risk"), 10)
+    difficulty_penalty = {
+        "low": 0,
+        "medium": 8,
+        "high": 18,
+    }.get(analysis.get("production_difficulty"), 8)
+
+    score = (
+        float(video.get("opportunity_score", 0)) * 0.45
+        + float(analysis.get("dark_channel_fit", 0)) * 0.35
+        + language_bonus
+        - risk_penalty
+        - difficulty_penalty
+    )
+
+    if not analysis.get("is_good_reference", False):
+        score = min(score, 40)
+
+    return round(max(0, min(100, score)), 2)
+
+
 def main() -> None:
     load_dotenv()
 
@@ -35,6 +69,10 @@ def main() -> None:
     for video in videos:
         try:
             analysis = analyze_video_opportunity(api_key=api_key, model=model, video=video)
+            production_priority_score = calculate_production_priority_score(
+                video=video,
+                analysis=analysis,
+            )
             record = {
                 "video_id": video["video_id"],
                 "analyzed_at": datetime.now(timezone.utc).isoformat(),
@@ -52,6 +90,7 @@ def main() -> None:
                 "fact_check_needed": analysis["fact_check_needed"],
                 "opportunity_reason": analysis["opportunity_reason"],
                 "original_angle_ideas": json.dumps(analysis["original_angle_ideas"], ensure_ascii=False),
+                "production_priority_score": production_priority_score,
                 "raw_json": analysis["raw_json"],
             }
             save_ai_analysis(db_path, record)
@@ -61,6 +100,7 @@ def main() -> None:
             print(f"language: {analysis['detected_language']}")
             print(f"dark_fit: {analysis['dark_channel_fit']}")
             print(f"risk: {analysis['copyright_risk']}")
+            print(f"production_priority_score: {production_priority_score}")
             print(f"reason: {analysis['opportunity_reason']}")
             print()
         except Exception as error:
