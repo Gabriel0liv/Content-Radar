@@ -4,3 +4,7 @@ python-dotenv
 pandas
 streamlit
 isodate
+requests
+# Optional:
+# openai
+# groq
