@@ -5,6 +5,7 @@ pandas
 streamlit
 isodate
 requests
+ollama
 # Optional:
 # openai
 # groq
