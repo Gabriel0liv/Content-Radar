@@ -118,7 +118,9 @@ def _extract_json(text: str) -> dict[str, Any]:
 
     if stripped.startswith("```"):
         parts = stripped.split("```")
-        stripped = next((part for part in parts if "{" in part and "}" in part), stripped)
+        stripped = next(
+            (part for part in parts if "{" in part and "}" in part), stripped
+        )
         stripped = stripped.replace("json", "", 1).strip()
 
     start = stripped.find("{")
@@ -155,12 +157,16 @@ def _normalize_analysis(data: dict[str, Any]) -> dict[str, Any]:
         "hook_type": str(data.get("hook_type", "")).strip(),
         "retention_pattern": str(data.get("retention_pattern", "")).strip(),
         "dark_channel_fit": _to_int(data.get("dark_channel_fit", 0), default=0),
-        "production_difficulty": str(data.get("production_difficulty", "medium")).lower(),
+        "production_difficulty": str(
+            data.get("production_difficulty", "medium")
+        ).lower(),
         "copyright_risk": str(data.get("copyright_risk", "medium")).lower(),
         "reused_content_risk": str(data.get("reused_content_risk", "medium")).lower(),
         "fact_check_needed": _to_bool(data.get("fact_check_needed", False)),
         "opportunity_reason": str(data.get("opportunity_reason", "")).strip(),
-        "original_angle_ideas": [str(item).strip() for item in original_angles if str(item).strip()][:3],
+        "original_angle_ideas": [
+            str(item).strip() for item in original_angles if str(item).strip()
+        ][:3],
     }
 
     if normalized["detected_language"] not in VALID_LANGUAGES:
@@ -216,7 +222,9 @@ def analyze_video_opportunity(api_key: str, model: str, video: dict) -> dict:
     else:
         parsed = _response_to_dict(response)
         if parsed is None:
-            parsed = _extract_json(json.dumps(response, default=str, ensure_ascii=False))
+            parsed = _extract_json(
+                json.dumps(response, default=str, ensure_ascii=False)
+            )
     normalized = _normalize_analysis(parsed)
     normalized["raw_json"] = json.dumps(parsed, ensure_ascii=False)
     return normalized
