@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
 
-from src.scorer import score_videos
+from src.scorer import get_viral_config, score_videos
 from src.storage import (
     fetch_top_videos_balanced,
     init_ai_analysis_table,
@@ -51,6 +51,17 @@ KEYWORDS_BY_NICHE = {
 }
 
 
+def format_number(value) -> str:
+    number = float(value or 0)
+    if number >= 1_000_000:
+        formatted = number / 1_000_000
+        return f"{formatted:.1f}M".replace(".0M", "M")
+    if number >= 1_000:
+        formatted = number / 1_000
+        return f"{formatted:.1f}K".replace(".0K", "K")
+    return str(int(number))
+
+
 def main():
     load_dotenv()
 
@@ -63,9 +74,18 @@ def main():
     if not api_key:
         raise RuntimeError("Falta YOUTUBE_API_KEY no arquivo .env")
 
+    viral_config = get_viral_config()
+    print("CONFIGURAÇÃO DE VIRALIDADE")
+    print("==========================")
+    print(f"VIRAL_ONLY={str(viral_config['viral_only']).lower()}")
+    print(f"MIN_TOTAL_VIEWS={viral_config['min_total_views']}")
+    print(f"MIN_VIEWS_PER_DAY={viral_config['min_views_per_day']}")
+    print(f"MIN_OPPORTUNITY_SCORE={viral_config['min_opportunity_score']}")
+    print(f"VIRAL_STRICT_MODE={str(viral_config['viral_strict_mode']).lower()}")
+    print()
+
     init_db(db_path)
     init_ai_analysis_table(db_path)
-
 
     published_after = datetime.now(timezone.utc) - timedelta(days=days_back)
 
@@ -91,7 +111,7 @@ def main():
                 all_videos.extend(scored)
 
                 print(
-                    f"Coletados: {len(videos)} | Aprovados após filtros: {len(scored)}"
+                    f"Coletados: {len(videos)} | Aprovados virais: {len(scored)}"
                 )
 
             except Exception as error:
@@ -105,19 +125,31 @@ def main():
 
         upsert_videos(db_path, all_videos)
 
-    print("\n\nTOP VÍDEOS ENCONTRADOS — RANKING BALANCEADO")
-    print("===========================================")
+    print("\n\nTOP SINAIS VIRAIS DO YOUTUBE — RANKING BALANCEADO")
+    print("=================================================")
 
-    top_videos = fetch_top_videos_balanced(db_path, per_niche=5, total_limit=20)
+    top_videos = fetch_top_videos_balanced(db_path, per_niche=20, total_limit=200)
+    if viral_config["viral_only"]:
+        top_videos = [
+            video for video in top_videos if video.get("is_viral_candidate")
+        ]
+    top_videos = top_videos[:20]
 
     for index, video in enumerate(top_videos, start=1):
         print(
             f"{index}. [{video['niche']}] "
             f"{video['opportunity_score']} pts | "
-            f"{int(video['views_per_day'])} views/dia | "
+            f"{format_number(video.get('views', 0))} views | "
+            f"{format_number(video.get('views_per_day', 0))} views/dia | "
+            f"{video.get('viral_tier', 'weak')} | "
             f"{video['title']} | "
             f"{video['url']}"
         )
+
+    print(
+        "\nEste ranking mostra apenas sinais brutos do YouTube que passaram nos filtros de viralidade configurados no .env. "
+        "Para ver oportunidades reais de produção, rode python analyze.py e abra o painel com streamlit run app.py."
+    )
 
 
 if __name__ == "__main__":

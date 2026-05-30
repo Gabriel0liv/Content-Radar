@@ -71,6 +71,31 @@ with st.sidebar:
         step=1000,
     )
 
+    viral_only_filter = st.checkbox(
+        "Viral only",
+        value=False,
+    )
+
+    min_total_views = st.number_input(
+        "Total views mínimo",
+        min_value=0,
+        value=0,
+        step=100000,
+    )
+
+    min_viral_views_per_day = st.number_input(
+        "Viral views/dia mínimo",
+        min_value=0,
+        value=0,
+        step=10000,
+    )
+
+    viral_tier_filter = st.selectbox(
+        "Viral tier",
+        options=["all", "rising", "viral", "mega_viral"],
+        index=0,
+    )
+
     source_language_filter = st.selectbox(
         "Source language",
         options=["all", "pt", "en", "es", "unknown"],
@@ -158,6 +183,18 @@ filtered = df[
     & (df["views_per_day"] >= min_views_per_day)
 ].copy()
 
+if "views" in filtered.columns:
+    filtered = filtered[filtered["views"].fillna(0) >= min_total_views].copy()
+
+if "views_per_day" in filtered.columns:
+    filtered = filtered[filtered["views_per_day"].fillna(0) >= min_viral_views_per_day].copy()
+
+if viral_only_filter and "is_viral_candidate" in filtered.columns:
+    filtered = filtered[filtered["is_viral_candidate"] == 1].copy()
+
+if "viral_tier" in filtered.columns and viral_tier_filter != "all":
+    filtered = filtered[filtered["viral_tier"] == viral_tier_filter].copy()
+
 risk_order = {"low": 1, "medium": 2, "high": 3}
 
 if "source_language" in filtered.columns and source_language_filter != "all":
@@ -232,10 +269,15 @@ col4.metric(
     "Maior views/dia", int(filtered["views_per_day"].max()) if not filtered.empty else 0
 )
 
-st.subheader("Top oportunidades")
+st.subheader("Top sinais virais do YouTube")
+st.caption(
+    "Esta tabela mostra sinais brutos do YouTube que passaram nos filtros de viralidade. Ela ainda não representa recomendação final de produção."
+)
 
 show_columns = [
     "opportunity_score",
+    "viral_tier",
+    "is_viral_candidate",
     "niche",
     "title",
     "channel_title",
@@ -248,18 +290,28 @@ show_columns = [
 ]
 
 if has_niche_relevance_score:
-    show_columns.insert(2, "niche_relevance_score")
+    show_columns.insert(4, "niche_relevance_score")
+
+viral_tier_order = {"mega_viral": 4, "viral": 3, "rising": 2, "weak": 1}
+signals_df = filtered.copy()
+if "viral_tier" in signals_df.columns:
+    signals_df["_viral_tier_rank"] = signals_df["viral_tier"].map(viral_tier_order).fillna(0)
+else:
+    signals_df["_viral_tier_rank"] = 0
 
 st.dataframe(
-    filtered[show_columns].sort_values(
-        by=["opportunity_score", "views_per_day"],
+    signals_df[show_columns + ["_viral_tier_rank"]].sort_values(
+        by=["_viral_tier_rank", "views_per_day", "views", "opportunity_score"],
         ascending=False,
-    ),
+    )[show_columns],
     use_container_width=True,
     hide_index=True,
 )
 
-st.subheader("Análise IA")
+st.subheader("Top oportunidades para produção")
+st.caption(
+    "Use esta tabela para decidir o que produzir. Ela considera análise IA, adaptação, risco, perfil editorial e potencial de produção."
+)
 
 ai_columns = [
     "source_language",

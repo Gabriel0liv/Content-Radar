@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 from src.ai.constants import ANALYSIS_SCHEMA_VERSION
 from src.ai.factory import get_ai_provider
 from src.pre_ai_filter import local_pre_ai_filter
+from src.scorer import get_viral_config
 from src.storage import (
     fetch_videos_for_ai_analysis,
     init_ai_analysis_table,
@@ -14,8 +15,26 @@ from src.storage import (
     save_ai_analysis,
 )
 
+VALID_CONTENT_PROFILES = {
+    "general",
+    "curiosity_ai_trends",
+    "finance",
+    "history_mystery",
+    "psychology_behavior",
+}
 
-def calculate_production_priority_score(video: dict, analysis: dict) -> float:
+
+def get_content_profile() -> str:
+    content_profile = os.getenv("CONTENT_PROFILE", "curiosity_ai_trends").strip().lower()
+    if content_profile not in VALID_CONTENT_PROFILES:
+        print(
+            f"[WARN] CONTENT_PROFILE inválido: {content_profile}. Usando curiosity_ai_trends."
+        )
+        return "curiosity_ai_trends"
+    return content_profile
+
+
+def calculate_production_priority_score(video: dict, analysis: dict, content_profile: str = "curiosity_ai_trends") -> float:
     base_score = (
         float(video.get("opportunity_score", 0)) * 0.25
         + float(analysis.get("creator_fit_score", 0)) * 0.25
@@ -69,6 +88,17 @@ def calculate_production_priority_score(video: dict, analysis: dict) -> float:
 
     score = base_score + bonus - risk_penalty - difficulty_penalty
 
+    if content_profile == "curiosity_ai_trends":
+        if analysis.get("content_category") in {"finance", "product"}:
+            if (
+                analysis.get("adaptation_type") not in {"global_trend", "foreign_adaptable"}
+                and analysis.get("creator_fit_score", 0) < 75
+                and analysis.get("localization_potential", 0) < 75
+            ):
+                score -= 12
+        if analysis.get("adaptation_type") in {"source_too_contextual", "promotional", "reject"}:
+            score -= 12
+
     if recommended_action.startswith("reject_"):
         score = min(score, 25)
     if adaptation_type == "high_ip_risk":
@@ -93,6 +123,7 @@ def _save_analysis_record(db_path: str, video: dict, analysis: dict, model_name:
     production_priority_score = calculate_production_priority_score(
         video=video,
         analysis=analysis,
+        content_profile=str(video.get("content_profile", "curiosity_ai_trends")),
     )
     record = {
         "video_id": video["video_id"],
@@ -141,6 +172,10 @@ def _save_analysis_record(db_path: str, video: dict, analysis: dict, model_name:
 def _print_analysis_result(video: dict, analysis: dict, *, source: str, production_priority_score: float) -> None:
     print(f"[OK] {video['title']}")
     print(f"source: {source}")
+    print(f"content_profile: {video.get('content_profile', 'curiosity_ai_trends')}")
+    print(f"viral_tier: {video.get('viral_tier', 'unknown')}")
+    print(f"views: {int(video.get('views', 0))}")
+    print(f"views_per_day: {int(video.get('views_per_day', 0))}")
     print(
         f"good_reference: {'sim' if analysis['is_good_reference'] else 'não'}"
     )
@@ -159,15 +194,24 @@ def main() -> None:
     db_path = os.getenv("DATABASE_PATH", "data/database.sqlite")
     analysis_limit = int(os.getenv("AI_ANALYSIS_LIMIT", "20"))
     batch_size = max(1, int(os.getenv("AI_ANALYSIS_BATCH_SIZE", "5")))
+    content_profile = get_content_profile()
+    viral_config = get_viral_config()
     provider = get_ai_provider()
 
     init_db(db_path)
     init_ai_analysis_table(db_path)
 
-    videos = fetch_videos_for_ai_analysis(db_path, limit=analysis_limit)
+    videos = fetch_videos_for_ai_analysis(
+        db_path,
+        limit=analysis_limit,
+        viral_only=viral_config["viral_only"],
+    )
     if not videos:
         print("Nenhum vídeo novo encontrado para análise IA.")
         return
+
+    for video in videos:
+        video["content_profile"] = content_profile
 
     provider_model = f"{provider.provider_name}:{provider.model_name}"
 

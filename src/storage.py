@@ -39,6 +39,8 @@ def init_db(db_path: str) -> None:
                 dark_friendly_score REAL DEFAULT 0,
                 niche_relevance_score REAL DEFAULT 0,
                 opportunity_score REAL DEFAULT 0,
+                viral_tier TEXT,
+                is_viral_candidate INTEGER DEFAULT 0,
                 collected_at TEXT
             )
             """)
@@ -48,6 +50,8 @@ def init_db(db_path: str) -> None:
         _ensure_column(conn, "videos", "category_id", "TEXT")
         _ensure_column(conn, "videos", "default_language", "TEXT")
         _ensure_column(conn, "videos", "default_audio_language", "TEXT")
+        _ensure_column(conn, "videos", "viral_tier", "TEXT")
+        _ensure_column(conn, "videos", "is_viral_candidate", "INTEGER DEFAULT 0")
         conn.commit()
 
 
@@ -147,6 +151,9 @@ def _normalize_video_record(record: dict) -> dict:
     if record.get("fact_check_needed") is not None:
         record["fact_check_needed"] = bool(record["fact_check_needed"])
 
+    if record.get("is_viral_candidate") is not None:
+        record["is_viral_candidate"] = bool(record["is_viral_candidate"])
+
     return record
 
 
@@ -159,6 +166,7 @@ def upsert_videos(db_path: str, videos: Iterable[dict]) -> None:
             payload["tags"] = json.dumps(tags, ensure_ascii=False)
         elif tags is None:
             payload["tags"] = json.dumps([], ensure_ascii=False)
+        payload["is_viral_candidate"] = int(bool(payload.get("is_viral_candidate", 0)))
         payloads.append(payload)
 
     with get_connection(db_path) as conn:
@@ -169,14 +177,16 @@ def upsert_videos(db_path: str, videos: Iterable[dict]) -> None:
                 default_audio_language, channel_id, channel_title, published_at,
                 views, likes, comments, duration_seconds, url,
                 keyword, niche, views_per_day, comment_rate,
-                dark_friendly_score, niche_relevance_score, opportunity_score, collected_at
+                dark_friendly_score, niche_relevance_score, opportunity_score,
+                viral_tier, is_viral_candidate, collected_at
             )
             VALUES (
                 :video_id, :title, :description, :tags, :category_id, :default_language,
                 :default_audio_language, :channel_id, :channel_title, :published_at,
                 :views, :likes, :comments, :duration_seconds, :url,
                 :keyword, :niche, :views_per_day, :comment_rate,
-                :dark_friendly_score, :niche_relevance_score, :opportunity_score, :collected_at
+                :dark_friendly_score, :niche_relevance_score, :opportunity_score,
+                :viral_tier, :is_viral_candidate, :collected_at
             )
             ON CONFLICT(video_id) DO UPDATE SET
                 title = excluded.title,
@@ -200,6 +210,8 @@ def upsert_videos(db_path: str, videos: Iterable[dict]) -> None:
                 dark_friendly_score = excluded.dark_friendly_score,
                 niche_relevance_score = excluded.niche_relevance_score,
                 opportunity_score = excluded.opportunity_score,
+                viral_tier = excluded.viral_tier,
+                is_viral_candidate = excluded.is_viral_candidate,
                 collected_at = excluded.collected_at
             """,
             payloads,
@@ -403,6 +415,8 @@ def fetch_top_videos(db_path: str, limit: int = 100) -> list[dict]:
                 videos.dark_friendly_score AS dark_friendly_score,
                 videos.niche_relevance_score AS niche_relevance_score,
                 videos.opportunity_score AS opportunity_score,
+                videos.viral_tier AS viral_tier,
+                videos.is_viral_candidate AS is_viral_candidate,
                 videos.collected_at AS collected_at,
                 analysis.is_good_reference,
                 analysis.detected_language,
@@ -478,6 +492,8 @@ def fetch_top_videos_balanced(
                 videos.dark_friendly_score AS dark_friendly_score,
                 videos.niche_relevance_score AS niche_relevance_score,
                 videos.opportunity_score AS opportunity_score,
+                videos.viral_tier AS viral_tier,
+                videos.is_viral_candidate AS is_viral_candidate,
                 videos.collected_at AS collected_at,
                 analysis.is_good_reference,
                 analysis.detected_language,
@@ -540,7 +556,7 @@ def fetch_top_videos_balanced(
     return results
 
 
-def fetch_videos_for_ai_analysis(db_path: str, limit: int = 20) -> list[dict]:
+def fetch_videos_for_ai_analysis(db_path: str, limit: int = 20, viral_only: bool = False) -> list[dict]:
     fetch_limit = max(limit * 6, 60)
 
     with get_connection(db_path) as conn:
@@ -569,16 +585,21 @@ def fetch_videos_for_ai_analysis(db_path: str, limit: int = 20) -> list[dict]:
                 videos.dark_friendly_score,
                 videos.niche_relevance_score,
                 videos.opportunity_score,
+                videos.viral_tier,
+                videos.is_viral_candidate,
                 videos.collected_at
             FROM videos
             LEFT JOIN ai_video_analysis AS analysis ON analysis.video_id = videos.video_id
-            WHERE analysis.video_id IS NULL
-               OR analysis.analysis_schema_version IS NULL
-               OR analysis.analysis_schema_version < ?
+            WHERE (
+                analysis.video_id IS NULL
+                OR analysis.analysis_schema_version IS NULL
+                OR analysis.analysis_schema_version < ?
+            )
+              AND (? = 0 OR videos.is_viral_candidate = 1)
             ORDER BY videos.opportunity_score DESC, videos.views_per_day DESC
             LIMIT ?
             """,
-            (ANALYSIS_SCHEMA_VERSION, fetch_limit),
+            (ANALYSIS_SCHEMA_VERSION, int(viral_only), fetch_limit),
         ).fetchall()
 
     candidates = [dict(row) for row in rows]

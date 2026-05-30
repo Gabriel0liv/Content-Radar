@@ -1,4 +1,5 @@
 import math
+import os
 import re
 import unicodedata
 from datetime import datetime, timezone
@@ -181,6 +182,40 @@ def _parse_datetime(value: str) -> datetime:
     return datetime.fromisoformat(value.replace("Z", "+00:00"))
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    raw_value = os.getenv(name)
+    if raw_value is None:
+        return default
+    return raw_value.strip().lower() in {"1", "true", "yes", "sim", "on"}
+
+
+def _env_int(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def get_viral_config() -> dict:
+    return {
+        "viral_only": _env_bool("VIRAL_ONLY", True),
+        "min_total_views": _env_int("MIN_TOTAL_VIEWS", 1_000_000),
+        "min_views_per_day": _env_int("MIN_VIEWS_PER_DAY", 100_000),
+        "min_opportunity_score": _env_int("MIN_OPPORTUNITY_SCORE", 80),
+        "viral_strict_mode": _env_bool("VIRAL_STRICT_MODE", True),
+    }
+
+
+def classify_viral_tier(views: int, views_per_day: float) -> str:
+    if views >= 5_000_000 or views_per_day >= 500_000:
+        return "mega_viral"
+    if views >= 1_000_000 or views_per_day >= 100_000:
+        return "viral"
+    if views >= 500_000 or views_per_day >= 50_000:
+        return "rising"
+    return "weak"
+
+
 def _normalize_text(value: str) -> str:
     normalized = unicodedata.normalize("NFKD", value.lower())
     normalized = "".join(
@@ -253,6 +288,13 @@ def _is_valid_video(video: dict) -> bool:
     if views_per_day < MIN_VIEWS_PER_DAY:
         return False
 
+    config = get_viral_config()
+    if config["viral_only"] and config["viral_strict_mode"]:
+        if views < config["min_total_views"]:
+            return False
+        if views_per_day < config["min_views_per_day"]:
+            return False
+
     duration = int(video.get("duration_seconds", 0))
     if duration <= 0 or duration > 180:
         return False
@@ -276,7 +318,7 @@ def _is_valid_video(video: dict) -> bool:
     return _matches_any_term(raw_text, niche_words)
 
 
-def calculate_scores(video: dict) -> dict:
+def calculate_scores(video: dict) -> dict | None:
     now = datetime.now(timezone.utc)
 
     published_at = _parse_datetime(video["published_at"])
@@ -302,6 +344,16 @@ def calculate_scores(video: dict) -> dict:
     niche_relevance_score = min(niche_matches * 5, 15)
 
     views_per_day = views / age_days
+    viral_tier = classify_viral_tier(views, views_per_day)
+    is_viral_candidate = viral_tier in {"viral", "mega_viral"}
+    config = get_viral_config()
+
+    if config["viral_only"] and config["viral_strict_mode"]:
+        if views < config["min_total_views"] or views_per_day < config["min_views_per_day"]:
+            return None
+        if not is_viral_candidate:
+            return None
+
     comment_rate = comments / views if views >= 50000 and views > 0 else 0
 
     matched_words = [
@@ -354,6 +406,11 @@ def calculate_scores(video: dict) -> dict:
     video["dark_friendly_score"] = round(dark_friendly_score, 2)
     video["niche_relevance_score"] = round(niche_relevance_score, 2)
     video["opportunity_score"] = round(min(opportunity_score, 100), 2)
+    video["viral_tier"] = viral_tier
+    video["is_viral_candidate"] = int(is_viral_candidate)
+
+    if config["min_opportunity_score"] and video["opportunity_score"] < config["min_opportunity_score"]:
+        return None
 
     return video
 
@@ -365,6 +422,10 @@ def score_videos(videos: list[dict]) -> list[dict]:
         if not _is_valid_video(video):
             continue
 
-        scored.append(calculate_scores(video))
+        scored_video = calculate_scores(video)
+        if scored_video is None:
+            continue
+
+        scored.append(scored_video)
 
     return scored

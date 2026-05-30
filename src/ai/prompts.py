@@ -19,6 +19,7 @@ def _video_metadata(video: dict) -> dict:
         "channel_title": video.get("channel_title", ""),
         "niche": video.get("niche", ""),
         "keyword": video.get("keyword", ""),
+        "content_profile": video.get("content_profile", "curiosity_ai_trends"),
         "views": video.get("views", 0),
         "views_per_day": video.get("views_per_day", 0),
         "comments": video.get("comments", 0),
@@ -35,7 +36,7 @@ Objetivo:
 - analisar assunto, formato provável, gancho, potencial de produção e riscos
 - decidir se vale como referência para criar conteúdo original com abordagem própria
 - não clonar o vídeo
-- não copiar o tema exato
+- pode usar o mesmo assunto, fato, tendência ou notícia como ponto de partida, mas não copie roteiro, frases, edição, sequência narrativa, imagens, exemplos únicos ou abordagem do vídeo original. Crie uma versão original com pesquisa, voz e estrutura próprias.
 - não sugerir plágio
 - não depender de scraping, TikTok ou download do vídeo
 - a análise é baseada apenas em metadados da YouTube Data API
@@ -48,6 +49,14 @@ Regras obrigatórias:
 - Reduza prioridade ou rejeite quando o item depender fortemente de IP protegido, fandom, filme/série/anime/game, celebridade/fofoca local pouco relevante, legislação estrangeira muito específica, piada intraduzível, produto/anúncio, trend sem contexto para o Brasil, ou da necessidade de copiar imagens, edição ou narrativa do vídeo original.
 - Ferramenta/tecnologia pode ser válida como assunto editorial se o foco for tendência, impacto, curiosidade, risco, utilidade ou novidade.
 - Rejeite ferramenta/app apenas quando parecer anúncio direto, afiliado, venda, promoção ou demonstração de produto sem valor editorial.
+- "recommended_action" deve ser decisivo. Use "needs_manual_review" apenas quando houver incerteza real; não use como padrão.
+- Use "use_as_reference" quando o item já for uma boa referência direta para vídeo original.
+- Use "adapt_with_research" quando o assunto for bom, mas precisar de pesquisa, localização ou mudança de abordagem.
+- Use "reject_ip_risk" para IP/fandom/filme/série/anime/game/clip.
+- Use "reject_promotional" para anúncio, app/produto promocional, afiliado, venda ou demonstração sem valor editorial.
+- Use "reject_too_contextual" quando depender demais de contexto local estrangeiro, celebridade específica, legislação local ou piada intraduzível.
+- Use "reject_low_relevance" quando o tema estiver pouco alinhado ao perfil editorial.
+- Use "reject_low_quality" quando o tema for fraco, genérico, sem gancho ou sem potencial narrativo.
 - "original_angle_ideas" deve trazer apenas ângulos originais inspirados no padrão, nunca cópia do vídeo.
 - "dark_channel_fit" é uma nota de 0 a 100.
 - "creator_fit_score" é uma nota de 0 a 100 sobre o potencial para um vídeo original com voz e estilo próprios.
@@ -55,6 +64,13 @@ Regras obrigatórias:
 - "copyright_risk" deve ser "low", "medium" ou "high".
 - "reused_content_risk" deve ser "low", "medium" ou "high".
 - "source_language" e "detected_language" devem ser "pt", "en", "es" ou "unknown".
+
+Perfis editoriais:
+- general: aceita oportunidades amplas.
+- curiosity_ai_trends: prioriza curiosidades, IA, tecnologia, ciência estranha, assuntos em alta, comportamento humano, temas polêmicos e histórias explicáveis em vídeo narrado. Reduz prioridade de DIY genérico, economia doméstica simples, app promocional, lifehack fraco e conteúdo muito local/contextual.
+- finance: prioriza finanças pessoais, economia, dinheiro, trabalho, renda, impostos e educação financeira.
+- history_mystery: prioriza história, mistérios, fatos bizarros, casos reais e ciência estranha.
+- psychology_behavior: prioriza comportamento humano, psicologia, cérebro, relações sociais e fenômenos mentais.
 """.strip()
 
 

@@ -11,16 +11,22 @@ from src.ai.json_utils import normalize_analysis, parse_tags
 SERIES_CLIP_MARKERS = {
     "s1e",
     "s2e",
-    "episode",
-    "temporada",
-    "movie clip",
-    "film clip",
     "netflix",
     "disney",
     "pixar",
     "the rookie",
     "dogman",
 }
+SERIES_CLIP_COMBOS = (
+    ("tvshow", "edit"),
+    ("tv show", "edit"),
+    ("movie", "clip"),
+    ("film", "clip"),
+    ("series", "scene"),
+    ("serie", "scene"),
+    ("série", "cena"),
+    ("episode", "clip"),
+)
 FANDOM_IP_MARKERS = {
     "pokemon",
     "pokémon",
@@ -73,6 +79,9 @@ SAFE_TECH_TERMS = {
     "tool",
     "ia",
     "ai",
+    "video editing",
+    "editing software",
+    "ai editing",
 }
 
 
@@ -88,6 +97,10 @@ def _contains_marker(text: str, marker: str) -> bool:
 
 def _contains_any(text: str, markers: Iterable[str]) -> list[str]:
     return [marker for marker in markers if _contains_marker(text, marker)]
+
+
+def _contains_combo(text: str, first: str, second: str) -> bool:
+    return _contains_marker(text, first) and _contains_marker(text, second)
 
 
 def _make_rejection(video: dict, *, reason: str, recommended_action: str, adaptation_type: str,
@@ -154,11 +167,18 @@ def local_pre_ai_filter(video: dict) -> dict | None:
     if not text:
         return None
 
+    safe_tech_context = any(_contains_marker(text, term) for term in SAFE_TECH_TERMS)
     series_markers = _contains_any(text, SERIES_CLIP_MARKERS)
-    if series_markers:
+    series_combos = [
+        f"{first} + {second}"
+        for first, second in SERIES_CLIP_COMBOS
+        if _contains_combo(text, first, second)
+    ]
+    if (series_markers or series_combos) and not safe_tech_context:
+        matched = series_markers[:3] or series_combos[:3]
         return _make_rejection(
             video,
-            reason=f"conteúdo com forte sinal de série/filme/clip ({', '.join(series_markers[:3])})",
+            reason=f"conteúdo com forte sinal de série/filme/clip ({', '.join(matched)})",
             recommended_action="reject_ip_risk",
             adaptation_type="high_ip_risk",
             ip_risk="high",
@@ -192,7 +212,6 @@ def local_pre_ai_filter(video: dict) -> dict | None:
     promo_markers = _contains_any(text, PROMOTIONAL_MARKERS)
     has_brand = any(_contains_marker(text, brand) for brand in BLOCKED_BRANDS)
     mentions_app = _contains_marker(text, "app")
-    safe_tech_context = any(_contains_marker(text, term) for term in SAFE_TECH_TERMS)
     app_is_promotional = mentions_app and (
         bool(_contains_any(text, PROMOTIONAL_APP_MARKERS)) or has_brand
     )
