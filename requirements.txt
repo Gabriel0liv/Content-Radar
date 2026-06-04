@@ -9,3 +9,7 @@ ollama
 # Optional:
 # openai
 # groq
+
+# PostgreSQL integration
+psycopg2-binary
+sqlalchemy

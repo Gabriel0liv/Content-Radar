@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: dark_content_postgres
+    environment:
+      POSTGRES_DB: dark_content_radar
+      POSTGRES_USER: radar
+      POSTGRES_PASSWORD: radar
+    ports:
+      - "5432:5432"
+    volumes:
+      - dark_content_postgres_data:/var/lib/postgresql/data
+      - ./initdb:/docker-entrypoint-initdb.d
+    networks:
+      - content_radar_net
+    restart: unless-stopped
+
+volumes:
+  dark_content_postgres_data:
+
+networks:
+  content_radar_net:
+    name: content_radar_net
+    driver: bridge

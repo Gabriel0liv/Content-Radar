@@ -1,5 +1,10 @@
 .env
+data/
+*.sqlite
+*.db
+postgres-data/
+backups/
+**pycache**/
+.pytest_cache/
 .venv/
-__pycache__/
-*.pyc
-data/database.sqlite
+venv/
