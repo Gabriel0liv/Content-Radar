@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint
+from sqlalchemy import Column, BigInteger, String, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -7,7 +7,7 @@ from src.db.session import Base
 class ContentItem(Base):
     __tablename__ = "content_items"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger, primary_key=True)
     source = Column(String, nullable=False)
     external_id = Column(String, nullable=False)
     content_type = Column(String, nullable=False, server_default="video")
@@ -40,7 +40,13 @@ class ContentItem(Base):
         CheckConstraint(
             "status IN ('new', 'reviewed', 'selected', 'rejected', 'produced', 'archived')",
             name="check_content_items_status"
-        )
+        ),
+        Index("idx_content_items_score_desc", score.desc()),
+        Index("idx_content_items_published_at_desc", published_at.desc()),
+        Index("idx_content_items_status", status),
+        Index("idx_content_items_source_external_id", source, external_id),
+        Index("idx_content_items_content_type", content_type),
+        Index("idx_content_items_topic_seed", topic_seed),
     )
 
     events = relationship("ContentItemEvent", back_populates="content_item", cascade="all, delete-orphan")
@@ -49,10 +55,14 @@ class ContentItem(Base):
 class ContentItemEvent(Base):
     __tablename__ = "content_item_events"
 
-    id = Column(BigInteger, primary_key=True, index=True)
+    id = Column(BigInteger, primary_key=True)
     content_item_id = Column(BigInteger, ForeignKey("content_items.id", ondelete="CASCADE"), nullable=False)
     event_type = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     data = Column(JSONB, nullable=True)
+
+    __table_args__ = (
+        Index("idx_content_item_events_content_item_id", content_item_id),
+    )
 
     content_item = relationship("ContentItem", back_populates="events")

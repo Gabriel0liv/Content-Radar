@@ -1,6 +1,6 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, Literal
 
 class ContentItemBase(BaseModel):
     source: str
@@ -20,15 +20,13 @@ class ContentItemBase(BaseModel):
     discovery_query: Optional[str] = None
     language: Optional[str] = None
     country_code: Optional[str] = None
-    status: Optional[str] = "new"
-    notes: Optional[str] = None
     raw_json: Optional[Dict[str, Any]] = None
-    reviewed_at: Optional[datetime] = None
-    selected_at: Optional[datetime] = None
-    rejected_reason: Optional[str] = None
-    production_notes: Optional[str] = None
 
 class ContentItemCreate(ContentItemBase):
+    """
+    Schema for content creation/ingestion.
+    Blocks the client (n8n) from defining curation status or notes.
+    """
     pass
 
 class ContentItemUpdate(BaseModel):
@@ -45,17 +43,19 @@ class ContentItemUpdate(BaseModel):
     discovery_query: Optional[str] = None
     language: Optional[str] = None
     country_code: Optional[str] = None
-    status: Optional[str] = None
-    notes: Optional[str] = None
     raw_json: Optional[Dict[str, Any]] = None
-    rejected_reason: Optional[str] = None
-    production_notes: Optional[str] = None
 
 class ContentItemStatusUpdate(BaseModel):
-    status: str = Field(..., pattern="^(new|reviewed|selected|rejected|produced|archived)$")
+    status: Literal["new", "reviewed", "selected", "rejected", "produced", "archived"]
 
 class ContentItem(ContentItemBase):
     id: int
+    status: str
+    notes: Optional[str] = None
+    reviewed_at: Optional[datetime] = None
+    selected_at: Optional[datetime] = None
+    rejected_reason: Optional[str] = None
+    production_notes: Optional[str] = None
     collected_at: datetime
     last_seen_at: datetime
 

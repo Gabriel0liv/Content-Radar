@@ -15,9 +15,6 @@ data/
 .env
 postgres-data/
 backups/
-Dockerfile
-docker-compose.yml
-README.md
 CVS
 .svn
 .hg

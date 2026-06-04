@@ -1,8 +1,8 @@
-"""initial_schema
+"""baseline_content_items_schema
 
-Revision ID: f696a00d5de0
+Revision ID: 0001_baseline
 Revises: 
-Create Date: 2026-06-04 19:27:14.029515
+Create Date: 2026-06-04 22:00:00.000000
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = 'f696a00d5de0'
+revision: str = '0001_baseline'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -49,11 +49,7 @@ def upgrade() -> None:
         sa.Column('selected_at', sa.DateTime(timezone=True), nullable=True),
         sa.Column('rejected_reason', sa.Text(), nullable=True),
         sa.Column('production_notes', sa.Text(), nullable=True),
-        sa.UniqueConstraint('source', 'external_id', name='unique_source_external_id'),
-        sa.CheckConstraint(
-            "status IN ('new', 'reviewed', 'selected', 'rejected', 'produced', 'archived')",
-            name='check_content_items_status'
-        )
+        sa.UniqueConstraint('source', 'external_id', name='unique_source_external_id')
     )
     
     # Create indexes for content_items

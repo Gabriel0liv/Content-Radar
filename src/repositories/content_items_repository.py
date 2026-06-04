@@ -104,7 +104,9 @@ class ContentItemsRepository:
             return db_item
         else:
             # Create a fresh record
-            db_item = ContentItem(**item_in.model_dump())
+            item_data = item_in.model_dump()
+            item_data["status"] = "new"
+            db_item = ContentItem(**item_data)
             self.db.add(db_item)
             self.db.commit()
             self.db.refresh(db_item)

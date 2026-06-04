@@ -13,12 +13,8 @@ O projeto utiliza PostgreSQL local rodando via Docker Compose como infraestrutur
 Para iniciar o banco de dados PostgreSQL persistente local:
 
 ```bash
-docker compose up -d
+docker compose up -d postgres
 ```
-
-> [!WARNING]
-> Os scripts contidos na pasta `./initdb/` (como o `001_schema.sql`) **só executam automaticamente na primeira criação do volume do banco de dados**. 
-> Se você alterar os schemas posteriormente e o volume Docker já existir, as alterações não serão aplicadas de forma automática. Nesses casos, você precisará recriar o volume (ex: `docker compose down -v` e subir novamente) ou rodar as queries manuais de alteração.
 
 ### 2. Como conectar o n8n à rede Docker
 
@@ -131,37 +127,42 @@ O projeto separa as conexões dependendo do contexto de execução:
 
 ### 2. Fluxo de Migrations (Alembic)
 
+O Alembic é a **fonte oficial** de evolução do schema do banco de dados.
+
 > [!WARNING]
-> Como removemos o auto-mount da pasta `initdb` no Docker Compose para evitar conflito com migrations, **bancos de dados novos sobem completamente vazios** até que as migrations sejam executadas.
-> As migrations do Alembic não rodam automaticamente na inicialização do backend nesta fase. Devem ser rodadas manualmente.
+> Como o Docker Compose não inicializa mais as tabelas via `initdb` automaticamente, **bancos de dados novos sobem vazios** até que as migrations sejam aplicadas.
+> As migrations do Alembic não rodam automaticamente no startup do backend e devem ser executadas manualmente.
 
-#### Opção A: Para Bancos de Dados Existentes (Já criados pelo initdb)
-Como sua base de dados atual já possui a tabela `content_items` e dados salvos, siga este procedimento para evitar erros de criação duplicada:
+#### Opção A: Para Bancos de Dados Existentes (Banco já criado com dados)
+Se a base de dados já possui a tabela `content_items` sem a constraint de status, siga este fluxo para aplicar a nova constraint sem perder nenhum dado e sem gerar erros de criação duplicada:
 
-1. Confirme se a estrutura da migração inicial (`alembic/versions/*_initial_schema.py`) bate com o schema atual do banco.
-2. Defina a variável de ambiente `DATABASE_URL` apontando para o host local e execute o comando `stamp head` (isso registra a revisão inicial como aplicada sem rodar queries SQL):
+1. Registre o baseline do schema atual (0001_baseline) no banco de dados existente:
    ```powershell
    $env:DATABASE_URL="postgresql://radar:radar@localhost:5433/dark_content_radar"
-   .venv\Scripts\alembic stamp head
+   .venv\Scripts\alembic stamp 0001_baseline
    ```
-3. Verifique se o banco foi marcado corretamente:
+2. Aplique a migração que adiciona a check constraint de status (0002_add_status_check_constraint):
+   ```powershell
+   .venv\Scripts\alembic upgrade head
+   ```
+3. Verifique se o banco está na revisão correta:
    ```powershell
    .venv\Scripts\alembic current
    ```
 
 #### Opção B: Para Bancos de Dados Novos (Do Zero)
-Para inicializar o banco em uma instalação limpa:
+Para inicializar uma instalação limpa do banco de dados:
 
 1. Suba o container do Postgres:
    ```bash
    docker compose up -d postgres
    ```
-2. Defina a variável de ambiente `DATABASE_URL` local e rode o upgrade:
+2. Aplique todas as migrations a partir do zero até o head:
    ```powershell
    $env:DATABASE_URL="postgresql://radar:radar@localhost:5433/dark_content_radar"
    .venv\Scripts\alembic upgrade head
    ```
-   Ou aplique a migração diretamente de dentro do Docker usando o container do backend:
+   Ou de dentro do Docker usando o container do backend:
    ```bash
    docker compose run --rm backend alembic upgrade head
    ```
