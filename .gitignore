@@ -1,10 +1,51 @@
+# Project environment and credentials
 .env
+
+# Local data and PostgreSQL data directories
 data/
-*.sqlite
-*.db
 postgres-data/
 backups/
-**pycache**/
-.pytest_cache/
+
+# Local databases
+*.sqlite
+*.db
+
+# Python environments and caches
 .venv/
 venv/
+ENV/
+env/
+**pycache**/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ipynb_checkpoints/
+
+# IDEs and Editors configuration
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+
+# OS generated files
+.DS_Store
+.DS_Store?
+ehthumbs.db
+Icon?
+Thumbs.db
+
+# Build and distribution
+dist/
+build/
+eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.eggs/

@@ -13,3 +13,9 @@ ollama
 # PostgreSQL integration
 psycopg2-binary
 sqlalchemy
+
+# Backend API & migrations
+fastapi
+uvicorn[standard]
+alembic
+pydantic-settings
