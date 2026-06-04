@@ -30,10 +30,13 @@ docker network connect content_radar_net n8n
 
 ### 3. Credenciais para Configuração no n8n
 
-Ao configurar o nó do **PostgreSQL** no n8n, utilize as seguintes credenciais:
-
-* **Host:** `dark_content_postgres` (se o n8n estiver na mesma rede Docker) ou `localhost` (se rodar fora do Docker local)
-* **Port:** `5432`
+Ao configurar o nó do **PostgreSQL** no n8n:
+* **Se o n8n estiver rodando em Docker na mesma rede (`content_radar_net`):**
+  * **Host:** `dark_content_postgres`
+  * **Port:** `5432` (porta interna do container)
+* **Se o n8n estiver rodando fora do Docker (no host) ou para conexões locais via ferramentas de banco (DBeaver, pgAdmin):**
+  * **Host:** `localhost`
+  * **Port:** `5433` (porta externa exposta no host para evitar conflito caso você já possua outro Postgres rodando na porta padrão 5432)
 * **Database:** `dark_content_radar`
 * **User:** `radar`
 * **Password:** `radar`
