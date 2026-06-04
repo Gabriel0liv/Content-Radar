@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, String, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import Column, BigInteger, Text, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Index
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -8,13 +8,13 @@ class ContentItem(Base):
     __tablename__ = "content_items"
 
     id = Column(BigInteger, primary_key=True)
-    source = Column(String, nullable=False)
-    external_id = Column(String, nullable=False)
-    content_type = Column(String, nullable=False, server_default="video")
-    title = Column(String, nullable=False)
-    description = Column(String, nullable=True)
-    url = Column(String, nullable=False)
-    channel_title = Column(String, nullable=True)
+    source = Column(Text, nullable=False)
+    external_id = Column(Text, nullable=False)
+    content_type = Column(Text, nullable=False, server_default="video")
+    title = Column(Text, nullable=False)
+    description = Column(Text, nullable=True)
+    url = Column(Text, nullable=False)
+    channel_title = Column(Text, nullable=True)
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), server_default=func.now())
     last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -23,17 +23,17 @@ class ContentItem(Base):
     comments = Column(BigInteger, server_default="0")
     views_per_day = Column(Float, server_default="0.0")
     score = Column(Float, server_default="0.0")
-    topic_seed = Column(String, nullable=True)
-    discovery_query = Column(String, nullable=True)
-    language = Column(String, nullable=True)
-    country_code = Column(String, nullable=True)
-    status = Column(String, server_default="new")
-    notes = Column(String, nullable=True)
+    topic_seed = Column(Text, nullable=True)
+    discovery_query = Column(Text, nullable=True)
+    language = Column(Text, nullable=True)
+    country_code = Column(Text, nullable=True)
+    status = Column(Text, server_default="new")
+    notes = Column(Text, nullable=True)
     raw_json = Column(JSONB, nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     selected_at = Column(DateTime(timezone=True), nullable=True)
-    rejected_reason = Column(String, nullable=True)
-    production_notes = Column(String, nullable=True)
+    rejected_reason = Column(Text, nullable=True)
+    production_notes = Column(Text, nullable=True)
 
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="unique_source_external_id"),
@@ -57,7 +57,7 @@ class ContentItemEvent(Base):
 
     id = Column(BigInteger, primary_key=True)
     content_item_id = Column(BigInteger, ForeignKey("content_items.id", ondelete="CASCADE"), nullable=False)
-    event_type = Column(String, nullable=False)
+    event_type = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     data = Column(JSONB, nullable=True)
 
