@@ -24,7 +24,7 @@ def get_content_items(
     topic_seed: Optional[str] = None,
     min_score: Optional[float] = None,
     min_views: Optional[int] = None,
-    sort_by: Literal["score", "views", "published_at", "collected_at", "views_per_day"] = "score",
+    sort_by: Literal["score", "views", "published_at", "collected_at", "views_per_day", "last_seen_at"] = "score",
     sort_order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db)
 ):

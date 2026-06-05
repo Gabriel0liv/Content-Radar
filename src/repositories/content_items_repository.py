@@ -59,7 +59,7 @@ class ContentItemsRepository:
             search_pattern = f"%{search}%"
             query = query.filter(
                 (ContentItem.title.ilike(search_pattern)) |
-                (ContentItem.description.ilike(search_pattern))
+                (func.coalesce(ContentItem.description, '').ilike(search_pattern))
             )
         
         total = query.count()
@@ -70,7 +70,8 @@ class ContentItemsRepository:
             "views": ContentItem.views,
             "published_at": ContentItem.published_at,
             "collected_at": ContentItem.collected_at,
-            "views_per_day": ContentItem.views_per_day
+            "views_per_day": ContentItem.views_per_day,
+            "last_seen_at": ContentItem.last_seen_at
         }
         
         sort_column = sorting_whitelist.get(sort_by, ContentItem.score)
