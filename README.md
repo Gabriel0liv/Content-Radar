@@ -4,6 +4,14 @@ Portal de inteligência de conteúdo para encontrar oportunidades editoriais a p
 
 ---
 
+## Direção Arquitetural: Backend FastAPI & Futuro Frontend Next.js
+
+> [!NOTE]
+> A arquitetura de produção do projeto está centrada no **FastAPI** como backend principal e fonte da verdade para dados e curadoria de conteúdos persistidos no Postgres. 
+> * **Streamlit (app.py)**: Tratado agora como painel legado / MVP rápido. Não receberá novas atualizações de funcionalidades complexas.
+> * **FastAPI Backend (src/api)**: O backend oficial que fornece APIs completas de curadoria, paginação e estatísticas para alimentar integrações e o futuro frontend.
+> * **Frontend Futuro**: Um painel moderno em **Next.js** consumirá as APIs FastAPI para realizar a consulta, curadoria e fluxos de trabalho.
+
 ## Postgres local para integração com n8n
 
 O projeto utiliza PostgreSQL local rodando via Docker Compose como infraestrutura de armazenamento principal compartilhada com workflows do n8n. O Streamlit atua como painel de consulta, curadoria e análise posterior dos resultados coletados.

@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
-from typing import Optional, Dict, Any, Literal
+from typing import Optional, Dict, Any, Literal, List
 
 class ContentItemBase(BaseModel):
     source: str
@@ -29,6 +29,12 @@ class ContentItemCreate(ContentItemBase):
     """
     pass
 
+class ContentItemIngest(ContentItemCreate):
+    """
+    Alias for content ingestion.
+    """
+    pass
+
 class ContentItemUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
@@ -48,7 +54,13 @@ class ContentItemUpdate(BaseModel):
 class ContentItemStatusUpdate(BaseModel):
     status: Literal["new", "reviewed", "selected", "rejected", "produced", "archived"]
 
-class ContentItem(ContentItemBase):
+class ContentItemCurationUpdate(BaseModel):
+    status: Optional[Literal["new", "reviewed", "selected", "rejected", "produced", "archived"]] = None
+    notes: Optional[str] = None
+    production_notes: Optional[str] = None
+    rejected_reason: Optional[str] = None
+
+class ContentItemRead(ContentItemBase):
     id: int
     status: str
     notes: Optional[str] = None
@@ -61,6 +73,15 @@ class ContentItem(ContentItemBase):
 
     class Config:
         from_attributes = True
+
+# Alias for backward compatibility
+ContentItem = ContentItemRead
+
+class ContentItemListResponse(BaseModel):
+    items: List[ContentItemRead]
+    total: int
+    limit: int
+    offset: int
 
 class ContentItemSummary(BaseModel):
     total_items: int

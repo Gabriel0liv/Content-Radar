@@ -1,9 +1,9 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 from src.models.content_item import ContentItem, ContentItemEvent
-from src.schemas.content_item import ContentItemCreate
+from src.schemas.content_item import ContentItemCreate, ContentItemCurationUpdate
 
 class ContentItemsRepository:
     def __init__(self, db: Session):
@@ -27,15 +27,19 @@ class ContentItemsRepository:
     def list(
         self,
         limit: int = 500,
+        offset: int = 0,
+        search: Optional[str] = None,
         source: Optional[str] = None,
         content_type: Optional[str] = None,
         status: Optional[str] = None,
         topic_seed: Optional[str] = None,
         min_score: Optional[float] = None,
-        min_views: Optional[int] = None
-    ) -> List[ContentItem]:
+        min_views: Optional[int] = None,
+        sort_by: Optional[str] = "score",
+        sort_order: Optional[str] = "desc"
+    ) -> Tuple[List[ContentItem], int]:
         """
-        Queries content_items with optional filters.
+        Queries content_items with optional filters, pagination, search, and sorting.
         """
         query = self.db.query(ContentItem)
         if source and source != "Todos":
@@ -51,25 +55,39 @@ class ContentItemsRepository:
         if min_views is not None:
             query = query.filter(ContentItem.views >= min_views)
         
-        return query.order_by(ContentItem.score.desc(), ContentItem.published_at.desc()).limit(limit).all()
-
-    def update_status(self, item_id: int, status: str) -> Optional[ContentItem]:
-        """
-        Updates the status of a content item, setting reviewed_at or selected_at transition timestamps.
-        Does not touch curation notes, production notes, or rejected reasons.
-        """
-        item = self.get_by_id(item_id)
-        if not item:
-            return None
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                (ContentItem.title.ilike(search_pattern)) |
+                (ContentItem.description.ilike(search_pattern))
+            )
         
-        item.status = status
-        item.last_seen_at = datetime.now(timezone.utc)
+        total = query.count()
         
-        if status == "reviewed" and not item.reviewed_at:
-            item.reviewed_at = datetime.now(timezone.utc)
-        elif status == "selected" and not item.selected_at:
-            item.selected_at = datetime.now(timezone.utc)
+        # Whitelist of allowed columns for sorting
+        sorting_whitelist = {
+            "score": ContentItem.score,
+            "views": ContentItem.views,
+            "published_at": ContentItem.published_at,
+            "collected_at": ContentItem.collected_at,
+            "views_per_day": ContentItem.views_per_day
+        }
+        
+        sort_column = sorting_whitelist.get(sort_by, ContentItem.score)
+        
+        if sort_order == "asc":
+            query = query.order_by(sort_column.asc(), ContentItem.published_at.asc())
+        else:
+            query = query.order_by(sort_column.desc(), ContentItem.published_at.desc())
             
+        items = query.offset(offset).limit(limit).all()
+        return items, total
+
+    def save(self, item: ContentItem) -> ContentItem:
+        """
+        Saves and commits a ContentItem instance.
+        """
+        self.db.add(item)
         self.db.commit()
         self.db.refresh(item)
         return item
