@@ -19,6 +19,19 @@ services:
       - content_radar_net
     restart: unless-stopped
 
+  migrate:
+    build: .
+    container_name: dark_content_migrate
+    command: alembic upgrade head
+    environment:
+      - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - content_radar_net
+    restart: "no"
+
   backend:
     build: .
     container_name: dark_content_backend
@@ -26,9 +39,35 @@ services:
     ports:
       - "8000:8000"
     environment:
-      DATABASE_URL: postgresql://radar:radar@postgres:5432/dark_content_radar
+      - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
     depends_on:
       postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health')\""]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - content_radar_net
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: dark_content_frontend
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+      - /app/.next
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - WATCHPACK_POLLING=true
+    depends_on:
+      backend:
         condition: service_healthy
     networks:
       - content_radar_net

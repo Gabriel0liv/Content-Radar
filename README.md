@@ -257,3 +257,50 @@ A aplicação estará disponível em [http://localhost:3000](http://localhost:30
 * **Página de Detalhes Dedicada**: Rota dinâmica `/content/[id]` com visualização completa do metadado original, descrição e formulário integral de curadoria.
 * **Tratamento de Erros e Status Online**: Indicador de conexão na barra de cabeçalho que avisa em tempo real se a API FastAPI cair, apresentando um banner explicativo de instrução para restabelecer a conexão.
 
+---
+
+## Execução via Docker Compose (Stack de Desenvolvimento Completa)
+
+Você pode subir toda a infraestrutura local (banco Postgres, aplicação das migrations do Alembic, backend FastAPI e frontend Next.js) com um único comando:
+
+### 1. Rodar a stack completa
+```bash
+docker compose up --build
+```
+
+Este comando executa a seguinte ordem de inicialização:
+1. Sobe o banco Postgres e aguarda estar saudável (`pg_isready`).
+2. Executa o contêiner `dark_content_migrate` aplicando todas as revisões pendentes do Alembic (`alembic upgrade head`) e finaliza com sucesso.
+3. Sobe o backend FastAPI e aguarda o healthcheck (`GET /health`) retornar sucesso.
+4. Sobe o frontend Next.js expondo a porta 3000 com volumes vinculados ao seu host para hot-reloading em tempo real.
+
+### 2. URLs de Acesso
+- **Frontend (Painel de Curadoria):** [http://localhost:3000](http://localhost:3000)
+- **Backend Swagger Docs:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **Host do Postgres:** `localhost:5433`
+
+### 3. Comandos Úteis
+
+* **Rodar apenas o Postgres em segundo plano:**
+  ```bash
+  docker compose up -d postgres
+  ```
+* **Rodar as migrations manualmente:**
+  ```bash
+  docker compose run --rm migrate
+  ```
+* **Conectar o container do n8n à rede do projeto:**
+  ```bash
+  docker network connect content_radar_net n8n
+  ```
+
+### 4. Configuração do n8n (Acesso à BD do Projeto)
+Configure o nó do **PostgreSQL** dentro do workflow do n8n com os parâmetros:
+* **Host:** `dark_content_postgres`
+* **Port:** `5432` (porta interna do contêiner)
+* **Database:** `dark_content_radar`
+* **User:** `radar`
+* **Password:** `radar`
+* **SSL:** `Disable`
+
+
