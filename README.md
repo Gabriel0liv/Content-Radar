@@ -209,8 +209,51 @@ docker compose up -d backend
 Com o backend rodando, acesse a documentação do Swagger para testar as rotas interativamente:
 * **Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
 * **Rotas Disponíveis:**
-  * `GET /health` - Status da API
-  * `GET /content-items` - Filtro e listagem
-  * `GET /content-items/{item_id}` - Detalhes do item
-  * `PATCH /content-items/{item_id}/status` - Transição de status
-  * `POST /ingest/n8n` - Upsert em lote para o n8n (futuro)
+  * `GET /health` - Status de saúde e conexão da API.
+  * `GET /content-items` - Filtro, busca textual (com `coalesce` no banco), ordenação dinâmica (incluindo `last_seen_at`) e paginação.
+  * `GET /content-items/summary` - Estatísticas consolidadas para os cards do dashboard.
+  * `GET /content-items/{item_id}` - Detalhes individuais do conteúdo.
+  * `PATCH /content-items/{item_id}` - Atualização exclusiva de curadoria (status, notas, notas de produção, motivo de rejeição).
+  * `PATCH /content-items/{item_id}/status` - Atualização rápida de status (compatibilidade).
+  * `POST /ingest/n8n` - Endpoint de ingestão em lote utilizando schema semântico `ContentItemIngest`.
+
+---
+
+## Frontend Next.js (Painel de Curadoria)
+
+O painel de curadoria é uma aplicação moderna desenvolvida com **Next.js 14 (App Router)**, **TypeScript**, **Tailwind CSS** e **Lucide Icons** para interagir com o backend FastAPI.
+
+### 1. Requisitos Prévios
+Certifique-se de possuir o **Node.js (v18 ou superior)** instalado na sua máquina.
+
+### 2. Configuração do Ambiente
+Crie um arquivo de variáveis de ambiente dentro da pasta `frontend/`:
+```bash
+cd frontend
+cp .env.example .env.local
+```
+O arquivo `.env.local` virá configurado por padrão para se conectar ao backend local em `http://localhost:8000`.
+
+### 3. Instalação e Inicialização
+Execute os comandos no seu terminal para instalar as dependências e iniciar o servidor de desenvolvimento:
+
+```bash
+# Navegar até a pasta do frontend
+cd frontend
+
+# Instalar as dependências
+npm install
+
+# Iniciar em modo de desenvolvimento
+npm run dev
+```
+
+A aplicação estará disponível em [http://localhost:3000](http://localhost:3000).
+
+### 4. Principais Funcionalidades Implementadas
+* **Visão Geral de Métricas (Dashboard)**: Cards com número total de itens coletados, novos sinais aguardando triagem, maior score de oportunidade e views máximas integrados com `GET /content-items/summary`.
+* **Filtros Avançados**: Barra de pesquisa textual com debounce de digitação e filtros por Fonte (YouTube/Google News), Tipo de Conteúdo (Vídeo/Artigo), Status, Nicho/Semente, Score Mínimo, Views Mínimas e Ordenação.
+* **Layout Responsivo Split-View**: Ao clicar em qualquer conteúdo na tabela principal, o formulário de curadoria abre em uma barra lateral no mesmo plano, mantendo a paginação e o scroll do usuário e facilitando uma triagem rápida em lote.
+* **Página de Detalhes Dedicada**: Rota dinâmica `/content/[id]` com visualização completa do metadado original, descrição e formulário integral de curadoria.
+* **Tratamento de Erros e Status Online**: Indicador de conexão na barra de cabeçalho que avisa em tempo real se a API FastAPI cair, apresentando um banner explicativo de instrução para restabelecer a conexão.
+

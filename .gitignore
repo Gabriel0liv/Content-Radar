@@ -49,3 +49,10 @@ sdist/
 var/
 *.egg-info/
 .eggs/
+
+# Frontend exclusions
+frontend/node_modules/
+frontend/.next/
+frontend/out/
+frontend/.env.local
+frontend/.env*.local

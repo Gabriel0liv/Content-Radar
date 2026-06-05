@@ -19,3 +19,8 @@ CVS
 .svn
 .hg
 .gitattributes
+
+# Frontend exclusions
+frontend/node_modules/
+frontend/.next/
+frontend/out/
