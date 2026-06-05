@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Radar, ListChecks, FileText, Video, Settings, Play } from "lucide-react";
+import { Radar, ListChecks, FileText, Video, Settings, Play, Search } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const menuItems = [
@@ -10,6 +10,12 @@ const menuItems = [
     name: "Conteúdos",
     href: "/content",
     icon: ListChecks,
+    active: true,
+  },
+  {
+    name: "Nichos / Pesquisas",
+    href: "/search-configs",
+    icon: Search,
     active: true,
   },
   {

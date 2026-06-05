@@ -34,6 +34,10 @@ class ContentItem(Base):
     selected_at = Column(DateTime(timezone=True), nullable=True)
     rejected_reason = Column(Text, nullable=True)
     production_notes = Column(Text, nullable=True)
+    
+    # Search configurations and runs mapping
+    search_config_id = Column(BigInteger, ForeignKey("search_configs.id", ondelete="SET NULL"), nullable=True)
+    search_run_id = Column(BigInteger, ForeignKey("search_runs.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="unique_source_external_id"),
@@ -47,9 +51,13 @@ class ContentItem(Base):
         Index("idx_content_items_source_external_id", source, external_id),
         Index("idx_content_items_content_type", content_type),
         Index("idx_content_items_topic_seed", topic_seed),
+        Index("idx_content_items_search_config_id", search_config_id),
+        Index("idx_content_items_search_run_id", search_run_id),
     )
 
     events = relationship("ContentItemEvent", back_populates="content_item", cascade="all, delete-orphan")
+    search_config = relationship("SearchConfig", back_populates="content_items")
+    search_run = relationship("SearchRun", back_populates="content_items")
 
 
 class ContentItemEvent(Base):

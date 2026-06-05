@@ -21,6 +21,8 @@ class ContentItemBase(BaseModel):
     language: Optional[str] = None
     country_code: Optional[str] = None
     raw_json: Optional[Dict[str, Any]] = None
+    search_config_id: Optional[int] = None
+    search_run_id: Optional[int] = None
 
 class ContentItemCreate(ContentItemBase):
     """

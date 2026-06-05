@@ -118,6 +118,12 @@ class ContentItemsRepository:
             db_item.raw_json = item_in.raw_json
             db_item.last_seen_at = datetime.now(timezone.utc)
             
+            # Track the most recent configuration and execution run that found the item
+            if hasattr(item_in, "search_config_id") and item_in.search_config_id is not None:
+                db_item.search_config_id = item_in.search_config_id
+            if hasattr(item_in, "search_run_id") and item_in.search_run_id is not None:
+                db_item.search_run_id = item_in.search_run_id
+            
             self.db.commit()
             self.db.refresh(db_item)
             return db_item
