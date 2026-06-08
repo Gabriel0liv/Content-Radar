@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import health, content_items, ingest, search
+from src.api.routes import health, content_items, ingest, search, references
 
 app = FastAPI(
     title="Dark Content Radar API",
@@ -25,3 +25,7 @@ app.include_router(content_items.router, prefix="/content-items", tags=["Content
 app.include_router(ingest.router, prefix="/ingest", tags=["Ingestion"])
 app.include_router(search.configs_router, prefix="/search-configs", tags=["Search Configurations"])
 app.include_router(search.runs_router, prefix="/search-runs", tags=["Search Runs"])
+app.include_router(references.reference_sources_router, prefix="/reference-sources", tags=["Reference Sources"])
+app.include_router(references.reference_import_jobs_router, prefix="/reference-import-jobs", tags=["Reference Import Jobs"])
+app.include_router(references.transcripts_router, prefix="/transcripts", tags=["Transcripts"])
+

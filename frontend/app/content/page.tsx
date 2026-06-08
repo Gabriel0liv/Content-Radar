@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import { useContentItems } from "@/hooks/use-content-items";
 import { useContentSummary } from "@/hooks/use-content-summary";
 import { ContentSummaryCards } from "@/components/content/content-summary-cards";
@@ -11,7 +11,7 @@ import { ContentItem } from "@/lib/types";
 import { RefreshCw, ServerCrash, AlertCircle } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export default function ContentDashboard() {
+function ContentDashboardContent() {
   const {
     items,
     total,
@@ -138,5 +138,18 @@ export default function ContentDashboard() {
         </>
       )}
     </div>
+  );
+}
+
+export default function ContentDashboard() {
+  return (
+    <Suspense fallback={
+      <div className="flex h-[80vh] flex-col items-center justify-center gap-3">
+        <RefreshCw className="h-8 w-8 animate-spin text-indigo-500" />
+        <span className="text-sm text-slate-400 font-medium">Carregando painel de curadoria...</span>
+      </div>
+    }>
+      <ContentDashboardContent />
+    </Suspense>
   );
 }

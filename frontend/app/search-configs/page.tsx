@@ -31,7 +31,7 @@ import { formatDate } from "@/lib/format";
 
 interface SearchConfigData {
   id: number;
-  name: str;
+  name: string;
   description: string | null;
   status: "active" | "paused" | "archived";
   language: string;

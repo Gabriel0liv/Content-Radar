@@ -19,6 +19,12 @@ const menuItems = [
     active: true,
   },
   {
+    name: "Referências / Transcrições",
+    href: "/references",
+    icon: FileText,
+    active: true,
+  },
+  {
     name: "Roteiros",
     href: "#",
     icon: FileText,

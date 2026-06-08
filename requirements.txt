@@ -19,3 +19,6 @@ fastapi
 uvicorn[standard]
 alembic
 pydantic-settings
+yt-dlp
+httpx
+

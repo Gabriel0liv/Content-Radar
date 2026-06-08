@@ -255,7 +255,9 @@ A aplicação estará disponível em [http://localhost:3000](http://localhost:30
 * **Filtros Avançados**: Barra de pesquisa textual com debounce de digitação e filtros por Fonte (YouTube/Google News), Tipo de Conteúdo (Vídeo/Artigo), Status, Nicho/Semente, Score Mínimo, Views Mínimas e Ordenação.
 * **Layout Responsivo Split-View**: Ao clicar em qualquer conteúdo na tabela principal, o formulário de curadoria abre em uma barra lateral no mesmo plano, mantendo a paginação e o scroll do usuário e facilitando uma triagem rápida em lote.
 * **Página de Detalhes Dedicada**: Rota dinâmica `/content/[id]` com visualização completa do metadado original, descrição e formulário integral de curadoria.
+* **Referências / Transcrições**: Importação e visualização de vídeos do YouTube diretamente pela URL para extração de metadados e legendas (transcrições e segmentos com timestamps) sem download de arquivos de mídia.
 * **Tratamento de Erros e Status Online**: Indicador de conexão na barra de cabeçalho que avisa em tempo real se a API FastAPI cair, apresentando um banner explicativo de instrução para restabelecer a conexão.
+
 
 ---
 
@@ -302,5 +304,23 @@ Configure o nó do **PostgreSQL** dentro do workflow do n8n com os parâmetros:
 * **User:** `radar`
 * **Password:** `radar`
 * **SSL:** `Disable`
+
+---
+
+## Módulo de Referências e Transcrições (YouTube URL Import)
+
+Este novo módulo permite adicionar referências analíticas importando dados de vídeos do YouTube diretamente de sua URL. Veja os detalhes em [docs/reference-transcriptions.md](file:///d:/documentos/Projetos/dark-content-radar/docs/reference-transcriptions.md).
+
+### Novas Rotas Adicionadas:
+* `POST /reference-sources/import-youtube-url` - Dispara o job de importação em background.
+* `GET /reference-sources` - Lista fontes cadastradas com filtros de busca.
+* `GET /reference-sources/{id}` - Obtém dados de uma referência.
+* `GET /reference-import-jobs/{id}` - Acompanha o status de importação (polling).
+* `GET /reference-sources/{id}/transcripts` - Lista transcrições associadas à fonte.
+* `GET /transcripts/{id}/segments` - Obtém os blocos segmentados com timestamps.
+
+> [!CAUTION]
+> **Nota Legal de Uso**: As transcrições e metadados extraídos pelo portal destinam-se exclusivamente a análises de engajamento, triagem editorial e inspiração original para criação de roteiros próprios. O sistema não deve ser utilizado para plágio ou cópia não autorizada de conteúdos protegidos por direitos autorais de terceiros.
+
 
 

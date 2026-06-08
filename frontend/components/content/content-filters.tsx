@@ -16,7 +16,7 @@ interface FiltersProps {
     sort_by: string;
     sort_order: string;
   };
-  setFilter: (key: string, value: any) => void;
+  setFilter: (key: any, value: any) => void;
   resetFilters: () => void;
 }
 

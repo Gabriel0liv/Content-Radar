@@ -24,7 +24,7 @@ interface ContentTableProps {
     limit: number;
     offset: number;
   };
-  setFilter: (key: string, value: any) => void;
+  setFilter: (key: any, value: any) => void;
   onSelect: (item: ContentItem) => void;
   selectedId?: number | null;
 }
