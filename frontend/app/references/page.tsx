@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   importYouTubeReferenceUrl,
   getReferenceSources,
@@ -27,7 +28,10 @@ import {
   ArrowRight,
   Eye,
   ThumbsUp,
-  Volume2
+  Volume2,
+  ChevronDown,
+  SlidersHorizontal,
+  X
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -45,7 +49,18 @@ function formatDuration(seconds: number | null | undefined): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
+const availableLanguages = [
+  { code: "pt", name: "Português" },
+  { code: "pt-BR", name: "Português (Brasil)" },
+  { code: "en", name: "Inglês" },
+  { code: "es", name: "Espanhol" },
+  { code: "fr", name: "Francês" },
+  { code: "de", name: "Alemão" },
+  { code: "it", name: "Italiano" }
+];
+
 export default function ReferencesPage() {
+  const router = useRouter();
   const [sources, setSources] = useState<ReferenceSource[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -56,20 +71,56 @@ export default function ReferencesPage() {
   const [offset, setOffset] = useState(0);
   const [searchText, setSearchText] = useState("");
   const [statusFilter, setStatusFilter] = useState("Todos");
+  const [sourceTypeFilter, setSourceTypeFilter] = useState("Todos");
+  const [channelTitleFilter, setChannelTitleFilter] = useState("");
   const [sortField, setSortField] = useState<"created_at" | "view_count" | "like_count" | "duration_seconds" | "published_at">("created_at");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+
+  const getActiveFiltersCount = () => {
+    let count = 0;
+    if (searchText.trim()) count++;
+    if (channelTitleFilter.trim()) count++;
+    if (statusFilter !== "Todos") count++;
+    if (sourceTypeFilter !== "Todos") count++;
+    return count;
+  };
 
   // Import form states
   const [importUrl, setImportUrl] = useState("");
-  const [preferredLanguagesStr, setPreferredLanguagesStr] = useState("pt, pt-BR, en");
+  const [selectedLangs, setSelectedLangs] = useState<string[]>(["pt", "pt-BR", "en"]);
+  const [showLangDropdown, setShowLangDropdown] = useState(false);
   const [allowAutoCaptions, setAllowAutoCaptions] = useState(true);
   const [importing, setImporting] = useState(false);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
-  // Polling state
   const [activeJobId, setActiveJobId] = useState<number | null>(null);
   const [pollingJob, setPollingJob] = useState<ReferenceImportJob | null>(null);
   const pollCountRef = useRef(0);
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Close dropdown on click outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setShowLangDropdown(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  const toggleLanguage = (langCode: string) => {
+    if (selectedLangs.includes(langCode)) {
+      if (selectedLangs.length > 1) {
+        setSelectedLangs(selectedLangs.filter(l => l !== langCode));
+      } else {
+        toast.warning("Selecione pelo menos um idioma.");
+      }
+    } else {
+      setSelectedLangs([...selectedLangs, langCode]);
+    }
+  };
 
   // Fetch reference sources
   const loadSources = useCallback(async () => {
@@ -81,6 +132,8 @@ export default function ReferencesPage() {
         offset,
         search: searchText,
         status: statusFilter,
+        source_type: sourceTypeFilter,
+        channel_title: channelTitleFilter,
         sort_by: sortField,
         sort_order: sortOrder
       });
@@ -91,7 +144,12 @@ export default function ReferencesPage() {
     } finally {
       setLoading(false);
     }
-  }, [limit, offset, searchText, statusFilter, sortField, sortOrder]);
+  }, [limit, offset, searchText, statusFilter, sourceTypeFilter, channelTitleFilter, sortField, sortOrder]);
+
+  // Reset offset to 0 when filters change
+  useEffect(() => {
+    setOffset(0);
+  }, [searchText, statusFilter, sourceTypeFilter, channelTitleFilter, sortField, sortOrder]);
 
   useEffect(() => {
     loadSources();
@@ -180,10 +238,7 @@ export default function ReferencesPage() {
       return;
     }
 
-    const langs = preferredLanguagesStr
-      .split(",")
-      .map(lang => lang.trim())
-      .filter(Boolean);
+    const langs = selectedLangs.length > 0 ? selectedLangs : ["pt", "pt-BR", "en"];
 
     setImporting(true);
     toast.info("Iniciando importação de vídeo...", {
@@ -270,8 +325,29 @@ export default function ReferencesPage() {
             Cole links do YouTube para extrair metadados e transcrições automaticamente como referências criativas.
           </p>
         </div>
-        <div>
+        <div className="flex items-center gap-2">
           <button
+            type="button"
+            onClick={() => setIsFilterModalOpen(true)}
+            className={cn(
+              "relative flex h-10 px-3.5 items-center justify-center gap-2 rounded-lg border transition-colors font-semibold text-xs select-none",
+              getActiveFiltersCount() > 0
+                ? "border-indigo-500 bg-indigo-600/10 text-indigo-400 hover:bg-indigo-650/20"
+                : "border-slate-800 bg-[#0b101c] text-slate-400 hover:text-slate-205 hover:bg-slate-900"
+            )}
+            title="Filtrar e Ordenar"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+            <span>Filtros</span>
+            {getActiveFiltersCount() > 0 && (
+              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-indigo-600 text-[10px] font-bold text-white leading-none">
+                {getActiveFiltersCount()}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
             onClick={loadSources}
             className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-800 bg-[#0b101c] hover:bg-slate-900 text-slate-400 hover:text-slate-200 transition-colors"
             title="Atualizar lista"
@@ -281,185 +357,138 @@ export default function ReferencesPage() {
         </div>
       </div>
 
-      {/* Top Section: Form and Active Polling Job Info */}
-      <div className="grid gap-6 md:grid-cols-3">
-        {/* Import Form Card */}
-        <div className="md:col-span-2 rounded-xl border border-slate-800 bg-[#0b101c]/35 p-6 backdrop-blur-sm shadow-md">
-          <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
-            <Plus className="h-4.5 w-4.5 text-indigo-400" />
-            Importar do YouTube
-          </h3>
-          <form onSubmit={handleImportSubmit} className="space-y-4">
-            <div className="space-y-1.5">
-              <label className="text-xs font-bold uppercase tracking-wider text-slate-400">URL do Vídeo ou Shorts</label>
+      {/* YouTube Import Form Card */}
+      <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-6 backdrop-blur-sm shadow-md">
+        <h3 className="text-base font-bold text-white mb-4 flex items-center gap-2">
+          <Plus className="h-4.5 w-4.5 text-indigo-400" />
+          Importar do YouTube
+        </h3>
+        <form onSubmit={handleImportSubmit} className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div className="flex-1 relative">
               <input
                 type="text"
                 value={importUrl}
                 onChange={(e) => setImportUrl(e.target.value)}
-                placeholder="Ex: https://www.youtube.com/watch?v=VIDEO_ID ou https://youtu.be/... ou shorts/..."
+                placeholder="Cole o link do YouTube (Vídeo ou Shorts) aqui..."
                 className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-semibold"
                 disabled={importing || activeJobId !== null}
                 required
               />
             </div>
-            
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Idiomas Preferidos (Ordem)</label>
-                <input
-                  type="text"
-                  value={preferredLanguagesStr}
-                  onChange={(e) => setPreferredLanguagesStr(e.target.value)}
-                  placeholder="pt, pt-BR, en"
-                  className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 font-semibold"
-                  disabled={importing || activeJobId !== null}
-                />
-              </div>
 
-              <div className="flex items-center h-full pt-6 select-none">
-                <label className="flex items-center gap-2.5 cursor-pointer text-sm text-slate-350 font-medium">
-                  <input
-                    type="checkbox"
-                    checked={allowAutoCaptions}
-                    onChange={(e) => setAllowAutoCaptions(e.target.checked)}
-                    className="h-4.5 w-4.5 rounded border-slate-800 bg-slate-950 text-indigo-600 outline-none focus:ring-offset-0 focus:ring-0"
-                    disabled={importing || activeJobId !== null}
-                  />
-                  <span>Permitir Legendas Automáticas</span>
-                </label>
-              </div>
+            {/* Custom Multi-Select Dropdown */}
+            <div className="relative shrink-0" ref={dropdownRef}>
+              <button
+                type="button"
+                onClick={() => setShowLangDropdown(!showLangDropdown)}
+                disabled={importing || activeJobId !== null}
+                className="h-10 px-3.5 flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-950 text-xs font-semibold text-slate-350 hover:border-slate-700 transition-colors w-full sm:w-44 select-none"
+              >
+                <span className="truncate">
+                  Idiomas ({selectedLangs.join(", ")})
+                </span>
+                <ChevronDown className="h-4 w-4 text-slate-500 shrink-0" />
+              </button>
+
+              {showLangDropdown && (
+                <div className="absolute right-0 mt-2 w-48 rounded-lg border border-slate-850 bg-slate-950 p-2 shadow-xl z-20 space-y-1">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 px-2.5 py-1">Idiomas Preferidos</span>
+                  <div className="max-h-48 overflow-y-auto space-y-0.5">
+                    {availableLanguages.map((lang) => {
+                      const isChecked = selectedLangs.includes(lang.code);
+                      return (
+                        <label
+                          key={lang.code}
+                          className={cn(
+                            "flex items-center gap-2.5 px-2.5 py-1.5 rounded text-xs font-medium cursor-pointer transition-colors select-none",
+                            isChecked ? "text-white bg-indigo-600/10 hover:bg-indigo-600/15" : "text-slate-400 hover:bg-slate-900/60"
+                          )}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={() => toggleLanguage(lang.code)}
+                            className="h-3.5 w-3.5 rounded border-slate-800 bg-slate-950 text-indigo-600 outline-none focus:ring-0"
+                          />
+                          <span>{lang.name}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
 
+            {/* Import Button */}
             <button
               type="submit"
               disabled={importing || activeJobId !== null || !importUrl.trim()}
-              className="w-full sm:w-auto flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500 transition-all disabled:opacity-40 select-none"
+              className="shrink-0 flex items-center justify-center gap-2 rounded-lg bg-indigo-600 px-5 h-10 text-sm font-semibold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500 transition-all disabled:opacity-40 select-none"
             >
               {importing ? (
                 <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Conectando...</span>
+                  <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+                  <span>Importando...</span>
                 </>
               ) : (
                 <>
-                  <Play className="h-4 w-4 fill-current" />
-                  <span>Importar Vídeo</span>
+                  <Play className="h-4 w-4 fill-current shrink-0" />
+                  <span>Importar</span>
                 </>
               )}
             </button>
-          </form>
-        </div>
-
-        {/* Polling/Active job card */}
-        <div className="rounded-xl border border-slate-800 bg-[#0b101c]/25 p-6 backdrop-blur-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-base font-bold text-white mb-4">Tarefa Ativa</h3>
-            {activeJobId ? (
-              <div className="space-y-4">
-                <div className="flex items-start gap-3">
-                  <Loader2 className="h-5 w-5 text-indigo-400 animate-spin shrink-0 mt-0.5" />
-                  <div className="space-y-1">
-                    <span className="block text-xs font-semibold text-slate-300">Processando Importação</span>
-                    <span className="block text-[11px] font-mono text-slate-500">ID do Job: #{activeJobId}</span>
-                  </div>
-                </div>
-
-                <div className="space-y-2.5 bg-slate-950/40 rounded-lg p-3.5 border border-slate-900 text-xs">
-                  <div className="flex justify-between">
-                    <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Status</span>
-                    <span className="text-indigo-400 font-semibold">{pollingJob ? getJobStatusLabel(pollingJob.status) : "Na fila..."}</span>
-                  </div>
-                  {pollingJob?.selected_language && (
-                    <div className="flex justify-between">
-                      <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Idioma Escolhido</span>
-                      <span className="text-slate-300 font-semibold uppercase font-mono">{pollingJob.selected_language}</span>
-                    </div>
-                  )}
-                  {pollingJob?.reference_source_id && (
-                    <div className="flex justify-between items-center pt-1.5 border-t border-slate-900/60 mt-1">
-                      <span className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Ação</span>
-                      <Link
-                        href={`/references/${pollingJob.reference_source_id}`}
-                        className="text-[11px] font-bold text-indigo-400 hover:text-indigo-300 flex items-center gap-1 group"
-                      >
-                        Ver detalhes
-                        <ArrowRight className="h-3 w-3 group-hover:translate-x-0.5 transition-transform" />
-                      </Link>
-                    </div>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="text-center py-8 text-slate-500 text-sm font-medium">
-                Nenhuma importação ativa em progresso neste navegador.
-              </div>
-            )}
           </div>
 
-          {activeJobId && (
-            <div className="text-[10px] text-slate-500 font-medium italic border-t border-slate-800/40 pt-4 mt-2">
-              Polling automático ativo (atualiza a cada 3s)
+          <div className="flex items-center gap-2 select-none text-[11px] font-semibold text-slate-450 mt-1.5 pl-1">
+            <label className="flex items-center gap-2 cursor-pointer hover:text-slate-350 transition-colors">
+              <input
+                type="checkbox"
+                checked={allowAutoCaptions}
+                onChange={(e) => setAllowAutoCaptions(e.target.checked)}
+                className="h-4 w-4 rounded border-slate-800 bg-slate-950 text-indigo-600 outline-none focus:ring-0"
+                disabled={importing || activeJobId !== null}
+              />
+              <span>Habilitar legendas automáticas geradas por IA</span>
+            </label>
+          </div>
+        </form>
+
+        {/* Active Job Status Banner */}
+        {activeJobId && (
+          <div className="mt-4 rounded-xl border border-indigo-900/40 bg-indigo-950/15 p-4 shadow-inner flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 animate-pulse">
+            <div className="flex items-center gap-3">
+              <Loader2 className="h-5 w-5 text-indigo-450 animate-spin shrink-0" />
+              <div className="space-y-0.5">
+                <span className="block text-xs font-bold text-slate-200">Importação em Andamento</span>
+                <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-slate-500 font-medium">
+                  <span>Job ID: #{activeJobId}</span>
+                  <span>•</span>
+                  <span className="text-indigo-400 font-semibold">{pollingJob ? getJobStatusLabel(pollingJob.status) : "Na fila..."}</span>
+                  {pollingJob?.selected_language && (
+                    <>
+                      <span>•</span>
+                      <span className="uppercase font-mono font-bold text-slate-450">{pollingJob.selected_language}</span>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
-          )}
-        </div>
+            {pollingJob?.reference_source_id && (
+              <Link
+                href={`/references/${pollingJob.reference_source_id}`}
+                className="shrink-0 inline-flex items-center justify-center gap-1.5 rounded-lg border border-indigo-500/20 bg-indigo-600/10 hover:bg-indigo-600/20 hover:text-white px-3 py-1.5 text-xs font-bold text-indigo-400 transition-colors"
+              >
+                <span>Ver transcrição</span>
+                <ArrowRight className="h-3.5 w-3.5" />
+              </Link>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Main List Section */}
       <div className="space-y-4">
-        {/* Filter bar */}
-        <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between bg-slate-950/20 p-4 rounded-xl border border-slate-850">
-          <div className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center">
-            {/* Search Input */}
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-              <input
-                type="text"
-                placeholder="Pesquisar por título, canal ou conteúdo..."
-                value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
-                className="w-full rounded-lg border border-slate-800 bg-slate-950 pl-10 pr-4 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all"
-              />
-            </div>
-
-            {/* Status Select */}
-            <div className="flex items-center gap-2">
-              <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-350 outline-none focus:border-indigo-500 font-medium"
-              >
-                <option value="Todos">Todos</option>
-                <option value="transcribed">Transcrito</option>
-                <option value="needs_audio_transcription">Pendente de Áudio</option>
-                <option value="importing">Importando</option>
-                <option value="failed">Falhou</option>
-                <option value="archived">Arquivado</option>
-              </select>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-slate-500 font-bold uppercase tracking-wider">Ordenar:</span>
-            <select
-              value={sortField}
-              onChange={(e) => setSortField(e.target.value as any)}
-              className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-1.5 text-xs text-slate-350 outline-none focus:border-indigo-500 font-medium"
-            >
-              <option value="created_at">Data Cadastro</option>
-              <option value="published_at">Data Publicação</option>
-              <option value="view_count">Visualizações</option>
-              <option value="like_count">Likes</option>
-              <option value="duration_seconds">Duração</option>
-            </select>
-            <button
-              onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
-              className="h-8.5 px-3 rounded-lg border border-slate-800 bg-slate-950 text-xs font-semibold text-slate-400 hover:text-slate-200 transition-colors uppercase font-mono"
-            >
-              {sortOrder === "asc" ? "ASC" : "DESC"}
-            </button>
-          </div>
-        </div>
 
         {/* References Table */}
         {loading && sources.length === 0 ? (
@@ -494,7 +523,12 @@ export default function ReferencesPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-800/60">
                   {sources.map((item) => (
-                    <tr key={item.id} className="hover:bg-slate-900/25 transition-colors">
+                    <tr
+                      key={item.id}
+                      onDoubleClick={() => router.push(`/references/${item.id}`)}
+                      className="hover:bg-slate-900/25 transition-colors cursor-pointer select-none"
+                      title="Duplo clique para visualizar detalhes"
+                    >
                       {/* Video Title and Thumbnail */}
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-3 max-w-sm sm:max-w-md md:max-w-lg lg:max-w-xl">
@@ -620,6 +654,140 @@ export default function ReferencesPage() {
           </div>
         )}
       </div>
+
+      {/* Filters Modal */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="relative w-full max-w-lg rounded-xl border border-slate-800 bg-[#0b101c] p-6 shadow-2xl animate-in zoom-in-95 duration-200">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-850 pb-4 mb-4">
+              <h3 className="text-lg font-bold text-white flex items-center gap-2 font-sans">
+                <SlidersHorizontal className="h-4.5 w-4.5 text-indigo-400" />
+                Filtros e Ordenação
+              </h3>
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="rounded-lg p-1.5 hover:bg-slate-900 text-slate-450 hover:text-slate-200 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="space-y-4">
+              {/* Search Inputs */}
+              <div className="space-y-3">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-450 select-none">Busca por Texto</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Pesquisar por título ou conteúdo..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950 pl-9 pr-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all placeholder:text-slate-500 font-medium"
+                  />
+                </div>
+                
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                  <input
+                    type="text"
+                    placeholder="Filtrar por nome do canal..."
+                    value={channelTitleFilter}
+                    onChange={(e) => setChannelTitleFilter(e.target.value)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950 pl-9 pr-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all placeholder:text-slate-500 font-medium"
+                  />
+                </div>
+              </div>
+
+              {/* Status and Type Selects */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-450 select-none">Status</label>
+                  <select
+                    value={statusFilter}
+                    onChange={(e) => setStatusFilter(e.target.value)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all font-semibold"
+                  >
+                    <option value="Todos">Todos</option>
+                    <option value="transcribed">Transcrito</option>
+                    <option value="needs_audio_transcription">Pendente de Áudio</option>
+                    <option value="importing">Importando</option>
+                    <option value="failed">Falhou</option>
+                    <option value="archived">Arquivado</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1.5">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-450 select-none">Tipo</label>
+                  <select
+                    value={sourceTypeFilter}
+                    onChange={(e) => setSourceTypeFilter(e.target.value)}
+                    className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all font-semibold"
+                  >
+                    <option value="Todos">Todos</option>
+                    <option value="youtube_video">YouTube</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Sorting */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-450 select-none">Ordenar por</label>
+                <div className="flex gap-2">
+                  <select
+                    value={sortField}
+                    onChange={(e) => setSortField(e.target.value as any)}
+                    className="flex-1 rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-300 outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/10 transition-all font-semibold"
+                  >
+                    <option value="created_at">Data Cadastro</option>
+                    <option value="published_at">Data Publicação</option>
+                    <option value="view_count">Visualizações</option>
+                    <option value="like_count">Likes</option>
+                    <option value="duration_seconds">Duração</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setSortOrder(sortOrder === "asc" ? "desc" : "asc")}
+                    className="h-9 px-3.5 rounded-lg border border-slate-800 bg-slate-950 text-xs font-bold text-slate-450 hover:text-slate-205 transition-colors uppercase font-mono select-none"
+                  >
+                    {sortOrder === "asc" ? "ASC" : "DESC"}
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-between border-t border-slate-850 pt-4 mt-6">
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchText("");
+                  setChannelTitleFilter("");
+                  setStatusFilter("Todos");
+                  setSourceTypeFilter("Todos");
+                  setSortField("created_at");
+                  setSortOrder("desc");
+                }}
+                className="text-xs font-bold text-slate-500 hover:text-slate-300 transition-colors py-2 px-1 select-none"
+              >
+                Limpar Filtros
+              </button>
+              
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500 transition-all select-none"
+              >
+                Aplicar ({total} {total === 1 ? "fonte" : "fontes"})
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
