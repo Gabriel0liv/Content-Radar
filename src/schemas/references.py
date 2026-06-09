@@ -9,8 +9,14 @@ YT_VIDEO_ID_REGEX = re.compile(
 )
 
 def extract_youtube_video_id(url: str) -> str:
-    if "playlist" in url or "/channel/" in url or "/c/" in url or "/user/" in url or "/@ " in url:
-        raise ValueError("Nesta etapa só URLs de vídeo individual são suportadas.")
+    # Check for channel/profile URLs
+    if "/channel/" in url or "/c/" in url or "/user/" in url or "/@" in url:
+        raise ValueError("URLs de canais ou perfis do YouTube não são suportadas. Por favor, envie a URL de um vídeo individual.")
+    
+    # Check for playlist URLs
+    is_video_url = "watch?v=" in url or "youtu.be/" in url or "/shorts/" in url or "/embed/" in url
+    if "playlist" in url or ("list=" in url and not is_video_url):
+        raise ValueError("URLs de playlists não são suportadas. Por favor, envie a URL de um vídeo individual.")
     
     match = YT_VIDEO_ID_REGEX.search(url)
     if not match:

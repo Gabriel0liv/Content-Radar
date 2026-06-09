@@ -184,8 +184,56 @@ def test_transcript_versioning():
         db.close()
     print("✓ test_transcript_versioning passed")
 
+def test_youtube_url_validation():
+    print("\nRunning test_youtube_url_validation...")
+    from src.schemas.references import extract_youtube_video_id
+
+    # 1. Valid URLs
+    valid_urls = [
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+        "http://youtube.com/watch?v=dQw4w9WgXcQ",
+        "youtube.com/watch?v=dQw4w9WgXcQ",
+        "https://youtu.be/dQw4w9WgXcQ",
+        "https://www.youtube.com/shorts/dQw4w9WgXcQ",
+        "https://www.youtube.com/watch?v=dQw4w9WgXcQ&list=PLB03EA954E5E1E8B8"
+    ]
+    for url in valid_urls:
+        video_id = extract_youtube_video_id(url)
+        assert video_id == "dQw4w9WgXcQ", f"Expected 'dQw4w9WgXcQ' for {url}, got '{video_id}'"
+    print("✓ Valid URLs successfully extracted")
+
+    # 2. Invalid channel/profile URLs
+    invalid_channels = [
+        "https://www.youtube.com/@GabrielOliv",
+        "youtube.com/@SomeUser",
+        "https://www.youtube.com/channel/UC_x5XG1OV2P6uYZ5FHSFzFQ",
+        "https://www.youtube.com/c/YouTubeBrasil",
+        "https://www.youtube.com/user/Google"
+    ]
+    for url in invalid_channels:
+        try:
+            extract_youtube_video_id(url)
+            assert False, f"Expected ValueError for channel URL: {url}"
+        except ValueError as e:
+            assert "canais ou perfis" in str(e), f"Unexpected error message: {e}"
+    print("✓ Channel URLs successfully rejected")
+
+    # 3. Invalid playlist URLs
+    invalid_playlists = [
+        "https://www.youtube.com/playlist?list=PLB03EA954E5E1E8B8",
+        "youtube.com/playlist?list=PLB03EA954E5E1E8B8"
+    ]
+    for url in invalid_playlists:
+        try:
+            extract_youtube_video_id(url)
+            assert False, f"Expected ValueError for playlist URL: {url}"
+        except ValueError as e:
+            assert "playlists" in str(e), f"Unexpected error message: {e}"
+    print("✓ Playlist URLs successfully rejected")
+
 if __name__ == "__main__":
     try:
+        test_youtube_url_validation()
         test_merge_overlapping_text()
         test_rolling_captions_chain()
         test_parse_vtt_and_build_clean_full_text()
