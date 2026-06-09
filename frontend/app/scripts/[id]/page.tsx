@@ -110,6 +110,7 @@ export default function VideoWorkspacePage() {
   const [loading, setLoading] = useState(true);
   const [savingScript, setSavingScript] = useState(false);
   const [activeTab, setActiveTab] = useState<"roteiro" | "quadro" | "notas" | "referencias" | "musica">("roteiro");
+  const [editorInitialized, setEditorInitialized] = useState(false);
 
   // Notes state
   const [notes, setNotes] = useState<VideoProjectNote[]>([]);
@@ -160,7 +161,19 @@ export default function VideoWorkspacePage() {
       setScriptWordCount(words);
       setScriptDuration(Math.round((words / 150) * 60));
     }
-  }, [loading]);
+  });
+
+  // Initialize editor content when both project and editor are ready
+  useEffect(() => {
+    if (project && editor && !editorInitialized) {
+      if (project.script_content_json) {
+        editor.commands.setContent(project.script_content_json);
+      } else {
+        editor.commands.setContent(project.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
+      }
+      setEditorInitialized(true);
+    }
+  }, [project, editor, editorInitialized]);
 
   // Load project details and other tabs elements
   const loadProjectData = useCallback(async () => {
@@ -170,15 +183,6 @@ export default function VideoWorkspacePage() {
       setProject(proj);
       setScriptWordCount(proj.word_count);
       setScriptDuration(proj.estimated_duration_seconds || 0);
-
-      // Load editor content
-      if (editor) {
-        if (proj.script_content_json) {
-          editor.commands.setContent(proj.script_content_json);
-        } else {
-          editor.commands.setContent(proj.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
-        }
-      }
 
       // Load sub-modules
       const [projNotes, projRefs, projAudios, projBoard] = await Promise.all([
@@ -212,7 +216,7 @@ export default function VideoWorkspacePage() {
         id: e.edge_key,
         source: e.source_node_key,
         target: e.target_node_key,
-        label: e.label || undefined,
+        label: typeof e.label === "string" ? e.label : null,
         animated: true,
         markerEnd: { type: MarkerType.ArrowClosed, color: "#6366f1" },
         style: { stroke: "#6366f1" }
@@ -226,7 +230,7 @@ export default function VideoWorkspacePage() {
     } finally {
       setLoading(false);
     }
-  }, [projectId, editor, setNodes, setEdges]);
+  }, [projectId, setNodes, setEdges]);
 
   // Load static references options
   useEffect(() => {

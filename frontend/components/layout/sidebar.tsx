@@ -26,10 +26,9 @@ const menuItems = [
   },
   {
     name: "Roteiros",
-    href: "#",
+    href: "/scripts",
     icon: FileText,
-    active: false,
-    badge: "Futuro",
+    active: true,
   },
   {
     name: "Produção",
