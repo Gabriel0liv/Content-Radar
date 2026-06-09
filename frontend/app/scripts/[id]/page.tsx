@@ -85,19 +85,19 @@ const statusConfig: Record<string, { label: string; class: string }> = {
   scripting: { label: "Roteirizando", class: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
   reviewing: { label: "Revisando", class: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
   ready: { label: "Pronto", class: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  produced: { label: "Produzido", class: "bg-slate-500/10 text-slate-350 border-slate-500/20" },
-  archived: { label: "Arquivado", class: "bg-rose-500/10 text-rose-450 border-rose-500/20" }
+  produced: { label: "Produzido", class: "bg-slate-500/10 text-slate-300 border-slate-500/20" },
+  archived: { label: "Arquivado", class: "bg-rose-500/10 text-rose-400 border-rose-500/20" }
 };
 
-// Available colors for board nodes
-const colors = [
-  { name: "Gray", class: "bg-slate-900 border-slate-700 text-slate-200" },
-  { name: "Blue", class: "bg-blue-950/50 border-blue-800 text-blue-200" },
-  { name: "Emerald", class: "bg-emerald-950/50 border-emerald-800 text-emerald-200" },
-  { name: "Indigo", class: "bg-indigo-950/50 border-indigo-800 text-indigo-200" },
-  { name: "Purple", class: "bg-purple-950/50 border-purple-800 text-purple-200" },
-  { name: "Orange", class: "bg-orange-950/50 border-orange-850 text-orange-200" },
-  { name: "Rose", class: "bg-rose-950/50 border-rose-800 text-rose-200" }
+// Available colors for board nodes — stores real CSS values, NOT Tailwind classes
+const colors: { name: string; bg: string; border: string; text: string }[] = [
+  { name: "Gray",    bg: "rgba(15,23,42,0.8)",   border: "#334155", text: "#cbd5e1" },
+  { name: "Blue",    bg: "rgba(23,37,84,0.6)",   border: "#1e40af", text: "#bfdbfe" },
+  { name: "Emerald", bg: "rgba(6,46,37,0.6)",    border: "#065f46", text: "#a7f3d0" },
+  { name: "Indigo",  bg: "rgba(30,27,75,0.6)",   border: "#3730a3", text: "#c7d2fe" },
+  { name: "Purple",  bg: "rgba(46,16,101,0.6)",  border: "#6b21a8", text: "#e9d5ff" },
+  { name: "Orange",  bg: "rgba(67,20,7,0.6)",    border: "#9a3412", text: "#fed7aa" },
+  { name: "Rose",    bg: "rgba(62,9,26,0.6)",    border: "#9f1239", text: "#fecdd3" }
 ];
 
 export default function VideoWorkspacePage() {
@@ -119,12 +119,18 @@ export default function VideoWorkspacePage() {
   const [newNoteTitle, setNewNoteTitle] = useState("");
   const [noteFilter, setNoteFilter] = useState<string>("all");
 
+  // Note editing state (Fix 6)
+  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
+  const [editNoteTitle, setEditNoteTitle] = useState("");
+  const [editNoteBody, setEditNoteBody] = useState("");
+
   // References state
   const [references, setReferences] = useState<VideoProjectReference[]>([]);
   const [refTitle, setRefTitle] = useState("");
   const [refUrl, setRefUrl] = useState("");
   const [selectedContentItemId, setSelectedContentItemId] = useState<string>("");
   const [selectedRefSourceId, setSelectedRefSourceId] = useState<string>("");
+  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string>("");
   
   const [allContentItems, setAllContentItems] = useState<ContentItem[]>([]);
   const [allRefSources, setAllRefSources] = useState<ReferenceSource[]>([]);
@@ -202,9 +208,9 @@ export default function VideoWorkspacePage() {
         position: { x: n.x, y: n.y },
         data: { label: n.title || n.body || "Nó do Quadro", title: n.title, body: n.body, color: n.color },
         style: {
-          background: colors.find(c => c.name === n.color)?.class.split(" ")[0] || "rgba(15, 23, 42, 0.6)",
-          color: "#fff",
-          border: `1px solid ${colors.find(c => c.name === n.color)?.class.split(" ")[1] || "#334155"}`,
+          background: colors.find(c => c.name === n.color)?.bg || "rgba(15,23,42,0.8)",
+          color: colors.find(c => c.name === n.color)?.text || "#cbd5e1",
+          border: `1px solid ${colors.find(c => c.name === n.color)?.border || "#334155"}`,
           borderRadius: "8px",
           padding: "10px",
           width: n.width || 160,
@@ -354,6 +360,34 @@ export default function VideoWorkspacePage() {
     }
   };
 
+  // Note editing handlers (Fix 6)
+  const handleStartEditNote = (note: VideoProjectNote) => {
+    setEditingNoteId(note.id);
+    setEditNoteTitle(note.title || "");
+    setEditNoteBody(note.body);
+  };
+
+  const handleCancelEditNote = () => {
+    setEditingNoteId(null);
+    setEditNoteTitle("");
+    setEditNoteBody("");
+  };
+
+  const handleSaveEditNote = async (noteId: number) => {
+    if (!editNoteBody.trim()) return;
+    try {
+      const updated = await updateVideoProjectNote(noteId, {
+        title: editNoteTitle.trim() || null,
+        body: editNoteBody.trim()
+      });
+      setNotes(notes.map(n => n.id === noteId ? updated : n));
+      setEditingNoteId(null);
+      toast.success("Nota atualizada!");
+    } catch (err: any) {
+      toast.error("Erro ao atualizar nota.");
+    }
+  };
+
   const filteredNotes = useMemo(() => {
     let result = notes;
     if (noteFilter !== "all") {
@@ -371,7 +405,7 @@ export default function VideoWorkspacePage() {
   // References operations
   const handleAddReference = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!refTitle.trim() && !selectedContentItemId && !selectedRefSourceId && !refUrl.trim()) {
+    if (!refTitle.trim() && !selectedContentItemId && !selectedRefSourceId && !selectedTranscriptId && !refUrl.trim()) {
       toast.error("Preencha pelo menos um campo para vincular a referência.");
       return;
     }
@@ -382,6 +416,7 @@ export default function VideoWorkspacePage() {
         external_url: refUrl.trim() || null,
         content_item_id: selectedContentItemId ? Number(selectedContentItemId) : null,
         reference_source_id: selectedRefSourceId ? Number(selectedRefSourceId) : null,
+        transcript_id: selectedTranscriptId ? Number(selectedTranscriptId) : null,
       };
 
       const ref = await createVideoProjectReference(projectId, payload);
@@ -390,6 +425,7 @@ export default function VideoWorkspacePage() {
       setRefUrl("");
       setSelectedContentItemId("");
       setSelectedRefSourceId("");
+      setSelectedTranscriptId("");
       toast.success("Referência vinculada!");
     } catch (err: any) {
       toast.error("Erro ao vincular referência.");
@@ -494,7 +530,7 @@ export default function VideoWorkspacePage() {
     setNodes((nds) =>
       nds.map((node) => {
         if (node.id === selectedNodeId) {
-          const colorClass = colors.find(c => c.name === nodeColorInput)?.class || "bg-slate-900 border-slate-700 text-slate-200";
+          const colorDef = colors.find(c => c.name === nodeColorInput) || colors[0];
           return {
             ...node,
             data: {
@@ -506,8 +542,9 @@ export default function VideoWorkspacePage() {
             },
             style: {
               ...node.style,
-              background: colorClass.split(" ")[0],
-              border: `1px solid ${colorClass.split(" ")[1]}`
+              background: colorDef.bg,
+              color: colorDef.text,
+              border: `1px solid ${colorDef.border}`
             }
           };
         }
@@ -905,10 +942,10 @@ export default function VideoWorkspacePage() {
                           key={c.name}
                           type="button"
                           onClick={() => setNodeColorInput(c.name)}
+                          style={{ background: c.bg, borderColor: c.border, color: c.text }}
                           className={cn(
                             "h-6 rounded border text-[9px] font-bold transition-all truncate px-0.5",
-                            c.class,
-                            nodeColorInput === c.name ? "ring-2 ring-indigo-500 border-transparent scale-105" : "opacity-80"
+                            nodeColorInput === c.name ? "ring-2 ring-indigo-500 scale-105" : "opacity-80"
                           )}
                         >
                           {c.name}
@@ -918,10 +955,10 @@ export default function VideoWorkspacePage() {
                   </div>
 
                   {/* Action buttons */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-850/60">
+                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
                     <button
                       onClick={handleUpdateNodeProperties}
-                      className="flex-1 flex items-center justify-center gap-1 rounded bg-indigo-650/15 hover:bg-indigo-650/25 border border-indigo-500/20 text-indigo-400 py-1.5 text-xs font-bold transition-colors"
+                      className="flex-1 flex items-center justify-center gap-1 rounded bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/20 text-indigo-400 py-1.5 text-xs font-bold transition-colors"
                     >
                       Atualizar
                     </button>
@@ -1042,65 +1079,111 @@ export default function VideoWorkspacePage() {
                       key={note.id}
                       className={cn(
                         "relative flex flex-col justify-between rounded-xl border p-4 backdrop-blur-sm transition-all shadow-md group",
-                        note.pinned ? "border-indigo-550/40 bg-indigo-950/5" : "border-slate-800 bg-[#0b101c]/15"
+                        note.pinned ? "border-indigo-500/40 bg-indigo-950/5" : "border-slate-800 bg-[#0b101c]/15"
                       )}
                     >
-                      <div>
-                        {/* Note Header Info */}
-                        <div className="flex items-center justify-between gap-2 mb-2">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
-                            {note.note_type}
-                          </span>
-                          
-                          <div className="flex items-center gap-1">
-                            {/* Pin note button */}
+                      {editingNoteId === note.id ? (
+                        /* Inline edit mode */
+                        <div className="space-y-3">
+                          <input
+                            type="text"
+                            value={editNoteTitle}
+                            onChange={(e) => setEditNoteTitle(e.target.value)}
+                            placeholder="Título (opcional)"
+                            className="w-full rounded bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 font-semibold"
+                          />
+                          <textarea
+                            value={editNoteBody}
+                            onChange={(e) => setEditNoteBody(e.target.value)}
+                            rows={4}
+                            className="w-full rounded bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 font-medium resize-none"
+                          />
+                          <div className="flex gap-2">
                             <button
-                              onClick={() => handleTogglePinNote(note)}
-                              className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-350", note.pinned && "text-indigo-400")}
+                              onClick={() => handleSaveEditNote(note.id)}
+                              className="flex-1 rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-xs font-bold text-white transition-colors"
                             >
-                              <Pin className="h-3 w-3" />
+                              Salvar
                             </button>
-
-                            {/* To Do Checkbox if todo type */}
-                            {note.note_type === "todo" && (
-                              <button
-                                onClick={() => handleToggleNoteStatus(note)}
-                                className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-350", note.status === "done" && "text-emerald-400")}
-                              >
-                                <Sliders className="h-3 w-3" />
-                              </button>
-                            )}
-
-                            {/* Delete Note button */}
                             <button
-                              onClick={() => handleDeleteNote(note.id)}
-                              className="p-1 rounded hover:bg-rose-950/20 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                              onClick={handleCancelEditNote}
+                              className="flex-1 rounded border border-slate-700 bg-slate-950 hover:bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors"
                             >
-                              <Trash2 className="h-3 w-3" />
+                              Cancelar
                             </button>
                           </div>
                         </div>
+                      ) : (
+                        /* View mode */
+                        <div>
+                          {/* Note Header Info */}
+                          <div className="flex items-center justify-between gap-2 mb-2">
+                            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
+                              {note.note_type}
+                            </span>
+                            
+                            <div className="flex items-center gap-1">
+                              {/* Edit note button */}
+                              <button
+                                onClick={() => handleStartEditNote(note)}
+                                className="p-1 rounded hover:bg-slate-900 transition-colors text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100"
+                                title="Editar nota"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                                </svg>
+                              </button>
 
-                        {/* Note Title */}
-                        {note.title && (
-                          <h5 className="text-xs font-bold text-slate-200 mb-1 leading-snug">
-                            {note.title}
-                          </h5>
-                        )}
+                              {/* Pin note button */}
+                              <button
+                                onClick={() => handleTogglePinNote(note)}
+                                className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-300", note.pinned && "text-indigo-400")}
+                              >
+                                <Pin className="h-3 w-3" />
+                              </button>
 
-                        {/* Note Body */}
-                        <p className={cn(
-                          "text-xs leading-relaxed text-slate-350 whitespace-pre-wrap",
-                          note.status === "done" && "line-through text-slate-500"
-                        )}>
-                          {note.body}
-                        </p>
-                      </div>
+                              {/* To Do Checkbox if todo type */}
+                              {note.note_type === "todo" && (
+                                <button
+                                  onClick={() => handleToggleNoteStatus(note)}
+                                  className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-300", note.status === "done" && "text-emerald-400")}
+                                >
+                                  <Sliders className="h-3 w-3" />
+                                </button>
+                              )}
 
-                      {/* Created date footer */}
-                      <div className="mt-3 pt-2.5 border-t border-slate-850/30 text-[10px] text-slate-500 font-mono font-medium">
-                        Adicionado em: {new Date(note.created_at).toLocaleString("pt-BR")}
-                      </div>
+                              {/* Delete Note button */}
+                              <button
+                                onClick={() => handleDeleteNote(note.id)}
+                                className="p-1 rounded hover:bg-rose-950/20 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+
+                          {/* Note Title */}
+                          {note.title && (
+                            <h5 className="text-xs font-bold text-slate-200 mb-1 leading-snug">
+                              {note.title}
+                            </h5>
+                          )}
+
+                          {/* Note Body */}
+                          <p className={cn(
+                            "text-xs leading-relaxed text-slate-400 whitespace-pre-wrap",
+                            note.status === "done" && "line-through text-slate-500"
+                          )}>
+                            {note.body}
+                          </p>
+
+                          {/* Created date footer */}
+                          <div className="mt-3 pt-2.5 border-t border-slate-800/30 text-[10px] text-slate-500 font-mono font-medium">
+                            Adicionado em: {new Date(note.created_at).toLocaleString("pt-BR")}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1157,7 +1240,7 @@ export default function VideoWorkspacePage() {
                   <select
                     value={selectedRefSourceId}
                     onChange={(e) => setSelectedRefSourceId(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-350 outline-none focus:border-indigo-500 font-semibold"
+                    className="w-full rounded bg-slate-950 border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500 font-semibold"
                   >
                     <option value="">Nenhum</option>
                     {allRefSources.map(src => (

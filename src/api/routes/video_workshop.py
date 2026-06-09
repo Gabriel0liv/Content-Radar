@@ -20,7 +20,8 @@ from src.schemas.video_workshop import (
     VideoProjectBoardNodeRead,
     VideoProjectBoardEdgeCreate,
     VideoProjectBoardEdgeRead,
-    VideoProjectBoardStateRead
+    VideoProjectBoardStateRead,
+    VideoProjectBoardStateUpsert
 )
 from src.services.video_workshop_service import VideoWorkshopService
 
@@ -184,40 +185,14 @@ def get_project_board_state(id: int, db: Session = Depends(get_db)):
 @router.put("/video-projects/{id}/board", response_model=VideoProjectBoardStateRead)
 def save_project_board_state(
     id: int,
-    payload: VideoProjectBoardStateRead,
+    payload: VideoProjectBoardStateUpsert,
     db: Session = Depends(get_db)
 ):
     service = VideoWorkshopService(db)
     project = service.get_video_project(id)
     if not project:
         raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-
-    # Adapt schema types for nodes/edges list input
-    nodes_in = [
-        VideoProjectBoardNodeCreate(
-            node_key=n.node_key,
-            node_type=n.node_type,
-            title=n.title,
-            body=n.body,
-            x=n.x,
-            y=n.y,
-            width=n.width,
-            height=n.height,
-            color=n.color,
-            data_json=n.data_json
-        ) for n in payload.nodes
-    ]
-    edges_in = [
-        VideoProjectBoardEdgeCreate(
-            edge_key=e.edge_key,
-            source_node_key=e.source_node_key,
-            target_node_key=e.target_node_key,
-            label=e.label,
-            data_json=e.data_json
-        ) for e in payload.edges
-    ]
-
-    return service.save_board_state_for_project(id, nodes_in, edges_in)
+    return service.save_board_state_for_project(id, payload.nodes, payload.edges)
 
 @router.post("/video-projects/{id}/board/nodes", response_model=VideoProjectBoardNodeRead, status_code=status.HTTP_201_CREATED)
 def create_project_board_node(id: int, payload: VideoProjectBoardNodeCreate, db: Session = Depends(get_db)):

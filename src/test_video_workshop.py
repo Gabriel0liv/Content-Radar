@@ -24,7 +24,8 @@ from src.schemas.video_workshop import (
     VideoProjectAudioIdeaCreate,
     VideoProjectBoardNodeCreate,
     VideoProjectBoardEdgeCreate,
-    VideoProjectBoardStateRead
+    VideoProjectBoardStateRead,
+    VideoProjectBoardStateUpsert
 )
 
 def test_tiptap_word_count():
@@ -181,14 +182,117 @@ def test_video_projects_crud_and_cascade():
     print("✓ test_video_projects_crud_and_cascade passed")
 
 
+def test_board_upsert_and_orphan_edge_cleanup():
+    """Fix 1 + Fix 7: Board save via Upsert schema; deleting a node cascades its edges."""
+    print("\nRunning test_board_upsert_and_orphan_edge_cleanup...")
+    db = SessionLocal()
+    service = VideoWorkshopService(db)
+
+    project = service.create_video_project(
+        VideoProjectCreate(title="Board Upsert Test", status="idea", priority=0)
+    )
+    project_id = project.id
+
+    try:
+        # -- 1. Save board using VideoProjectBoardStateUpsert (Fix 1) --
+        upsert_payload = VideoProjectBoardStateUpsert(
+            nodes=[
+                VideoProjectBoardNodeCreate(node_key="n-a", title="Node A", x=0, y=0),
+                VideoProjectBoardNodeCreate(node_key="n-b", title="Node B", x=100, y=0),
+                VideoProjectBoardNodeCreate(node_key="n-c", title="Node C", x=200, y=0),
+            ],
+            edges=[
+                VideoProjectBoardEdgeCreate(edge_key="e-ab", source_node_key="n-a", target_node_key="n-b"),
+                VideoProjectBoardEdgeCreate(edge_key="e-bc", source_node_key="n-b", target_node_key="n-c"),
+            ]
+        )
+        board = service.save_board_state_for_project(project_id, upsert_payload.nodes, upsert_payload.edges)
+        assert len(board["nodes"]) == 3, f"Expected 3 nodes, got {len(board['nodes'])}"
+        assert len(board["edges"]) == 2, f"Expected 2 edges, got {len(board['edges'])}"
+        print(f"  ✓ Board saved via Upsert schema: {len(board['nodes'])} nodes, {len(board['edges'])} edges")
+
+        # -- 2. Delete node "n-b" and verify its edges (e-ab and e-bc) are also removed (Fix 7) --
+        from src.repositories.video_workshop_repository import VideoWorkshopRepository
+        repo = VideoWorkshopRepository(db)
+        node_b = db.query(VideoProjectBoardNode).filter(
+            VideoProjectBoardNode.video_project_id == project_id,
+            VideoProjectBoardNode.node_key == "n-b"
+        ).first()
+        assert node_b is not None, "node n-b not found"
+
+        deleted = repo.delete_board_node(node_b.id)
+        assert deleted is True
+
+        remaining_edges = db.query(VideoProjectBoardEdge).filter(
+            VideoProjectBoardEdge.video_project_id == project_id
+        ).all()
+        assert len(remaining_edges) == 0, (
+            f"Expected 0 edges after deleting n-b (which was source+target), got {len(remaining_edges)}: "
+            + str([(e.edge_key, e.source_node_key, e.target_node_key) for e in remaining_edges])
+        )
+        print("  ✓ Orphan edges correctly deleted when node removed (Fix 7)")
+
+    finally:
+        db.query(VideoProject).filter(VideoProject.id == project_id).delete()
+        db.commit()
+        db.close()
+
+    print("✓ test_board_upsert_and_orphan_edge_cleanup passed")
+
+
+def test_note_create_touches_project_updated_at():
+    """Fix 5: Creating a note must update video_project.updated_at."""
+    print("\nRunning test_note_create_touches_project_updated_at...")
+    import time
+    db = SessionLocal()
+    service = VideoWorkshopService(db)
+
+    project = service.create_video_project(
+        VideoProjectCreate(title="Timestamp Touch Test", status="idea", priority=0)
+    )
+    project_id = project.id
+    original_updated_at = project.updated_at
+
+    try:
+        # Small delay so updated_at has time to differ
+        time.sleep(0.1)
+
+        note = service.create_note_for_project(
+            project_id,
+            VideoProjectNoteCreate(body="Nota de teste para updated_at", note_type="idea")
+        )
+
+        # Reload project from DB
+        db.expire_all()
+        from src.models.video_workshop import VideoProject as VP
+        refreshed = db.query(VP).filter(VP.id == project_id).first()
+
+        assert refreshed.updated_at > original_updated_at, (
+            f"Expected updated_at to have advanced after note creation. "
+            f"original={original_updated_at}, current={refreshed.updated_at}"
+        )
+        print(f"  ✓ updated_at advanced: {original_updated_at} -> {refreshed.updated_at}")
+
+    finally:
+        db.query(VideoProject).filter(VideoProject.id == project_id).delete()
+        db.commit()
+        db.close()
+
+    print("✓ test_note_create_touches_project_updated_at passed")
+
+
 if __name__ == "__main__":
     try:
         test_tiptap_word_count()
         test_video_projects_crud_and_cascade()
+        test_board_upsert_and_orphan_edge_cleanup()
+        test_note_create_touches_project_updated_at()
         print("\nAll video workshop tests passed successfully!")
     except AssertionError as e:
         print(f"\nAssertion error: {e}")
         sys.exit(1)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         print(f"\nUnexpected error: {e}")
         sys.exit(1)

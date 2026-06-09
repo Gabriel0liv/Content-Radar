@@ -215,3 +215,8 @@ class VideoProjectBoardEdgeRead(BaseModel):
 class VideoProjectBoardStateRead(BaseModel):
     nodes: List[VideoProjectBoardNodeRead] = []
     edges: List[VideoProjectBoardEdgeRead] = []
+
+# Board upsert schema — used by the PUT /board endpoint (no read-only fields required)
+class VideoProjectBoardStateUpsert(BaseModel):
+    nodes: List[VideoProjectBoardNodeCreate] = []
+    edges: List[VideoProjectBoardEdgeCreate] = []

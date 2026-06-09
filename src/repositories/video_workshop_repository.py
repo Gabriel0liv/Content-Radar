@@ -91,7 +91,7 @@ class VideoWorkshopRepository:
             )
 
         total = query.count()
-        items = query.order_by(VideoProject.created_at.desc()).offset(offset).limit(limit).all()
+        items = query.order_by(VideoProject.updated_at.desc()).offset(offset).limit(limit).all()
         return items, total
 
     def delete_video_project(self, project_id: int) -> bool:
@@ -101,6 +101,13 @@ class VideoWorkshopRepository:
         self.db.delete(db_project)
         self.db.commit()
         return True
+
+    def touch_video_project(self, project_id: int) -> None:
+        """Update updated_at on video_projects whenever a sub-resource changes."""
+        db_project = self.get_video_project_by_id(project_id)
+        if db_project:
+            db_project.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
 
 
     # --- Notes CRUD ---
@@ -119,6 +126,7 @@ class VideoWorkshopRepository:
         self.db.add(db_note)
         self.db.commit()
         self.db.refresh(db_note)
+        self.touch_video_project(project_id)
         return db_note
 
     def update_note(self, note_id: int, note_in: VideoProjectNoteUpdate) -> Optional[VideoProjectNote]:
@@ -139,8 +147,10 @@ class VideoWorkshopRepository:
         db_note = self.get_note_by_id(note_id)
         if not db_note:
             return False
+        project_id = db_note.video_project_id
         self.db.delete(db_note)
         self.db.commit()
+        self.touch_video_project(project_id)
         return True
 
 
@@ -160,14 +170,17 @@ class VideoWorkshopRepository:
         self.db.add(db_ref)
         self.db.commit()
         self.db.refresh(db_ref)
+        self.touch_video_project(project_id)
         return db_ref
 
     def delete_reference(self, reference_id: int) -> bool:
         db_ref = self.get_reference_by_id(reference_id)
         if not db_ref:
             return False
+        project_id = db_ref.video_project_id
         self.db.delete(db_ref)
         self.db.commit()
+        self.touch_video_project(project_id)
         return True
 
 
@@ -187,14 +200,17 @@ class VideoWorkshopRepository:
         self.db.add(db_audio)
         self.db.commit()
         self.db.refresh(db_audio)
+        self.touch_video_project(project_id)
         return db_audio
 
     def delete_audio_idea(self, audio_id: int) -> bool:
         db_audio = self.get_audio_idea_by_id(audio_id)
         if not db_audio:
             return False
+        project_id = db_audio.video_project_id
         self.db.delete(db_audio)
         self.db.commit()
+        self.touch_video_project(project_id)
         return True
 
 
@@ -234,6 +250,11 @@ class VideoWorkshopRepository:
         db_node = self.get_board_node_by_id(node_id)
         if not db_node:
             return False
+        # Fix 7: cascade delete edges that reference this node
+        self.db.query(VideoProjectBoardEdge).filter(
+            (VideoProjectBoardEdge.source_node_key == db_node.node_key) |
+            (VideoProjectBoardEdge.target_node_key == db_node.node_key)
+        ).delete(synchronize_session=False)
         self.db.delete(db_node)
         self.db.commit()
         return True
