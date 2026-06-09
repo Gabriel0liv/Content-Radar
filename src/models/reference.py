@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Text, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint, UniqueConstraint
+from sqlalchemy import Column, BigInteger, Text, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint, UniqueConstraint, Boolean
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -86,15 +86,23 @@ class Transcript(Base):
     raw_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+    # Versioning columns
+    version_number = Column(Integer, nullable=False, default=1, server_default="1")
+    is_active = Column(Boolean, nullable=False, default=False, server_default="false")
+    duplicate_of_transcript_id = Column(BigInteger, ForeignKey("transcripts.id", ondelete="SET NULL"), nullable=True)
+
     # Relationships
     reference_source = relationship("ReferenceSource", back_populates="transcripts")
     import_job = relationship("ReferenceImportJob", back_populates="transcripts")
     segments = relationship("TranscriptSegment", back_populates="transcript", cascade="all, delete-orphan")
+    duplicate_of_transcript = relationship("Transcript", remote_side=[id])
 
     __table_args__ = (
         CheckConstraint("source_method IN ('manual_caption', 'auto_caption', 'manual', 'audio_to_text_future')", name="check_transcripts_source_method"),
-        UniqueConstraint("reference_source_id", "full_text_hash", name="unique_transcripts_reference_source_id_full_text_hash"),
         Index("idx_transcripts_reference_source_id", reference_source_id),
+        Index("idx_transcripts_ref_source_id_hash", reference_source_id, full_text_hash),
+        Index("idx_transcripts_ref_source_id_is_active", reference_source_id, is_active),
+        Index("idx_transcripts_ref_source_id_version_number", reference_source_id, version_number),
     )
 
 class TranscriptSegment(Base):

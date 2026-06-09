@@ -178,3 +178,49 @@ class ReferencesRepository:
         return self.db.query(TranscriptSegment).filter(
             TranscriptSegment.transcript_id == transcript_id
         ).order_by(TranscriptSegment.segment_index.asc()).all()
+
+    def get_next_transcript_version_number(self, reference_source_id: int) -> int:
+        max_ver = self.db.query(func.max(Transcript.version_number)).filter(
+            Transcript.reference_source_id == reference_source_id
+        ).scalar()
+        return (max_ver or 0) + 1
+
+    def deactivate_transcripts_for_source(self, reference_source_id: int) -> None:
+        self.db.query(Transcript).filter(
+            Transcript.reference_source_id == reference_source_id
+        ).update({Transcript.is_active: False})
+        self.db.commit()
+
+    def create_transcript_version(
+        self,
+        reference_source_id: int,
+        import_job_id: Optional[int],
+        language: Optional[str],
+        source_method: str,
+        full_text: str,
+        full_text_hash: str,
+        version_number: int,
+        is_active: bool,
+        duplicate_of_transcript_id: Optional[int] = None,
+        srt_text: Optional[str] = None,
+        vtt_text: Optional[str] = None,
+        raw_json: Optional[Dict[str, Any]] = None
+    ) -> Transcript:
+        db_transcript = Transcript(
+            reference_source_id=reference_source_id,
+            import_job_id=import_job_id,
+            language=language,
+            source_method=source_method,
+            full_text=full_text,
+            full_text_hash=full_text_hash,
+            version_number=version_number,
+            is_active=is_active,
+            duplicate_of_transcript_id=duplicate_of_transcript_id,
+            srt_text=srt_text,
+            vtt_text=vtt_text,
+            raw_json=raw_json
+        )
+        self.db.add(db_transcript)
+        self.db.commit()
+        self.db.refresh(db_transcript)
+        return db_transcript

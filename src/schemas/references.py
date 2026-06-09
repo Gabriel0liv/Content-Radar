@@ -156,6 +156,9 @@ class TranscriptRead(BaseModel):
     vtt_text: Optional[str] = None
     raw_json: Optional[Dict[str, Any]] = None
     created_at: datetime
+    version_number: int
+    is_active: bool
+    duplicate_of_transcript_id: Optional[int] = None
 
     class Config:
         from_attributes = True

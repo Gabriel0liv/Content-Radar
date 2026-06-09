@@ -102,11 +102,94 @@ C D E
     assert full_text == "A B C D E", f"Expected 'A B C D E', got '{full_text}'"
     print("✓ build_clean_full_text passed")
 
+def test_transcript_versioning():
+    print("\nRunning test_transcript_versioning (DB integration)...")
+    from src.db.session import SessionLocal
+    from src.services.references_service import ReferencesService
+    from src.schemas.references import ReferenceSourceCreate, TranscriptCreate
+    from src.models.reference import ReferenceSource
+
+    db = SessionLocal()
+    service = ReferencesService(db)
+
+    # 1. Create a temporary ReferenceSource
+    source_in = ReferenceSourceCreate(
+        source_type="manual",
+        source_url="https://example.com/test-versioning",
+        title="Test Transcript Versioning",
+        status="new"
+    )
+    # Use repo directly to create source
+    db_source = service.repo.create_reference_source(source_in)
+    source_id = db_source.id
+    print(f"Created temp reference source with ID {source_id}")
+
+    try:
+        # 2. Add first manual transcript
+        payload1 = TranscriptCreate(
+            language="pt",
+            source_method="manual",
+            full_text="Texto da transcrição v1"
+        )
+        t1 = service.create_manual_transcript(source_id, payload1)
+        print(f"Transcript 1 created: ID={t1.id}, version={t1.version_number}, active={t1.is_active}")
+        assert t1.version_number == 1
+        assert t1.is_active is True
+        assert t1.duplicate_of_transcript_id is None
+
+        # 3. Add second manual transcript with different text
+        payload2 = TranscriptCreate(
+            language="pt",
+            source_method="manual",
+            full_text="Texto da transcrição v2 (diferente)"
+        )
+        t2 = service.create_manual_transcript(source_id, payload2)
+        print(f"Transcript 2 created: ID={t2.id}, version={t2.version_number}, active={t2.is_active}")
+        assert t2.version_number == 2
+        assert t2.is_active is True
+        assert t2.duplicate_of_transcript_id is None
+
+        # Refresh t1 to see if it was deactivated
+        db.refresh(t1)
+        assert t1.is_active is False
+        print("✓ Transcript 1 successfully deactivated")
+
+        # 4. Add third manual transcript with the SAME text as v1
+        payload3 = TranscriptCreate(
+            language="pt",
+            source_method="manual",
+            full_text="Texto da transcrição v1" # Same as t1
+        )
+        t3 = service.create_manual_transcript(source_id, payload3)
+        print(f"Transcript 3 created: ID={t3.id}, version={t3.version_number}, active={t3.is_active}, duplicate_of={t3.duplicate_of_transcript_id}")
+        assert t3.version_number == 3
+        assert t3.is_active is True
+        assert t3.duplicate_of_transcript_id == t1.id
+
+        # Refresh t2 to check if it was deactivated
+        db.refresh(t2)
+        assert t2.is_active is False
+        print("✓ Transcript 2 successfully deactivated")
+
+        # 5. List transcripts for the source and ensure they are all kept and returned
+        transcripts = service.get_transcripts_for_source(source_id)
+        assert len(transcripts) == 3
+        print("✓ All 3 versions are successfully kept in the database")
+
+    finally:
+        # Clean up
+        print("Cleaning up temp reference source...")
+        db.delete(db_source)
+        db.commit()
+        db.close()
+    print("✓ test_transcript_versioning passed")
+
 if __name__ == "__main__":
     try:
         test_merge_overlapping_text()
         test_rolling_captions_chain()
         test_parse_vtt_and_build_clean_full_text()
+        test_transcript_versioning()
         print("\nAll tests passed successfully!")
     except AssertionError as e:
         print(f"\nAssertion error occurred: {e}")

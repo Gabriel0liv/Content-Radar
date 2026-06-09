@@ -91,24 +91,32 @@ class ReferencesService:
     def create_manual_transcript(self, source_id: int, payload: TranscriptCreate, job_id: Optional[int] = None) -> Transcript:
         """
         Creates a manual transcript, computing its normalized SHA-256 hash.
-        If a duplicate is found, rolls back and returns the existing one.
+        Creates a new version and deactivates the older versions.
         """
         normalized_text = " ".join(payload.full_text.split())
         full_text_hash = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
 
-        # Check existing transcript to avoid duplicate attempts
+        # Find duplicate transcript with the same hash
         existing = self.repo.get_transcript_by_source_and_hash(source_id, full_text_hash)
-        if existing:
-            return existing
+        duplicate_of_id = existing.id if existing else None
+
+        # Get the next version number
+        version_number = self.repo.get_next_transcript_version_number(source_id)
 
         try:
-            db_transcript = self.repo.create_transcript(
+            # Deactivate all older transcripts for this source
+            self.repo.deactivate_transcripts_for_source(source_id)
+
+            db_transcript = self.repo.create_transcript_version(
                 reference_source_id=source_id,
                 import_job_id=job_id,
                 language=payload.language,
                 source_method=payload.source_method,
                 full_text=payload.full_text,
                 full_text_hash=full_text_hash,
+                version_number=version_number,
+                is_active=True,
+                duplicate_of_transcript_id=duplicate_of_id,
                 srt_text=payload.srt_text,
                 vtt_text=payload.vtt_text,
                 raw_json=payload.raw_json
@@ -129,11 +137,7 @@ class ReferencesService:
 
         except IntegrityError:
             self.db.rollback()
-            # Retrieve existing transcript from race condition
-            existing = self.repo.get_transcript_by_source_and_hash(source_id, full_text_hash)
-            if not existing:
-                raise ValueError("Concorrência ao criar transcrição.")
-            return existing
+            raise ValueError("Erro ao salvar versão da transcrição manual.")
 
 
 # Module-level background task executor using an isolated session
@@ -281,59 +285,60 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
                 normalized_text = " ".join(full_text.split())
                 full_text_hash = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
 
-                # Check if this exact transcript is already registered
+                # Check if this exact transcript is already registered (for duplicate reference mapping)
                 existing_transcript = repo.get_transcript_by_source_and_hash(source.id, full_text_hash)
-                
-                if existing_transcript:
-                    # Reuse the existing transcript
-                    job.selected_language = selected_lang
-                    job.selected_caption_type = caption_type
-                    job.status = "completed"
-                    job.raw_result_json = {
-                        "selected_language": selected_lang,
-                        "selected_caption_type": caption_type,
-                        "caption_ext": "vtt",
-                        "caption_track_url": caption_url,
-                        "transcript_reused": True,
-                        "transcript_id": existing_transcript.id
-                    }
-                else:
-                    # Insert a new transcript
-                    source_method = "manual_caption" if caption_type == "manual_caption" else "auto_caption"
-                    db_transcript = repo.create_transcript(
-                        reference_source_id=source.id,
-                        import_job_id=job.id,
-                        language=selected_lang,
-                        source_method=source_method,
-                        full_text=full_text,
-                        full_text_hash=full_text_hash,
-                        vtt_text=vtt_text,
-                        raw_json={"parsed_metadata": {"char_count": len(full_text), "segment_count": len(parsed_segments)}}
-                    )
-                    
-                    # Convert segments
-                    db_segments_in = [
-                        TranscriptSegmentCreate(
-                            segment_index=seg["segment_index"],
-                            start_time=seg["start_time"],
-                            end_time=seg["end_time"],
-                            text=seg["text"]
-                        )
-                        for seg in parsed_segments
-                    ]
-                    repo.create_transcript_segments(db_transcript.id, db_segments_in)
+                duplicate_of_id = existing_transcript.id if existing_transcript else None
+                same_hash_as_previous = existing_transcript is not None
 
-                    job.selected_language = selected_lang
-                    job.selected_caption_type = caption_type
-                    job.status = "completed"
-                    job.raw_result_json = {
-                        "selected_language": selected_lang,
-                        "selected_caption_type": caption_type,
-                        "caption_ext": "vtt",
-                        "caption_track_url": caption_url,
-                        "transcript_reused": False,
-                        "transcript_id": db_transcript.id
-                    }
+                # Get the next version number
+                version_number = repo.get_next_transcript_version_number(source.id)
+
+                # Deactivate older transcripts for this source
+                repo.deactivate_transcripts_for_source(source.id)
+
+                # Insert a new transcript version
+                source_method = "manual_caption" if caption_type == "manual_caption" else "auto_caption"
+                db_transcript = repo.create_transcript_version(
+                    reference_source_id=source.id,
+                    import_job_id=job.id,
+                    language=selected_lang,
+                    source_method=source_method,
+                    full_text=full_text,
+                    full_text_hash=full_text_hash,
+                    version_number=version_number,
+                    is_active=True,
+                    duplicate_of_transcript_id=duplicate_of_id,
+                    vtt_text=vtt_text,
+                    raw_json={"parsed_metadata": {"char_count": len(full_text), "segment_count": len(parsed_segments)}}
+                )
+                
+                # Convert segments
+                db_segments_in = [
+                    TranscriptSegmentCreate(
+                        segment_index=seg["segment_index"],
+                        start_time=seg["start_time"],
+                        end_time=seg["end_time"],
+                        text=seg["text"]
+                    )
+                    for seg in parsed_segments
+                ]
+                repo.create_transcript_segments(db_transcript.id, db_segments_in)
+
+                job.selected_language = selected_lang
+                job.selected_caption_type = caption_type
+                job.status = "completed"
+                job.raw_result_json = {
+                    "selected_language": selected_lang,
+                    "selected_caption_type": caption_type,
+                    "caption_ext": "vtt",
+                    "caption_track_url": caption_url,
+                    "transcript_created": True,
+                    "transcript_id": db_transcript.id,
+                    "version_number": version_number,
+                    "full_text_hash": full_text_hash,
+                    "duplicate_of_transcript_id": duplicate_of_id,
+                    "same_hash_as_previous": same_hash_as_previous
+                }
 
                 source.status = "transcribed"
                 

@@ -96,8 +96,9 @@ export default function ReferenceDetailPage() {
         setTranscripts(transList);
         
         if (transList.length > 0) {
-          setSelectedTranscript(transList[0]);
-          loadSegments(transList[0].id);
+          const activeTranscript = transList.find(t => t.is_active) || transList[0];
+          setSelectedTranscript(activeTranscript);
+          loadSegments(activeTranscript.id);
         }
 
         // Fetch jobs history
@@ -355,6 +356,108 @@ export default function ReferenceDetailPage() {
 
       {/* Transcript Visualizer section */}
       <div className="space-y-4">
+        {/* Version Selector List */}
+        {transcripts.length > 0 && (
+          <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 backdrop-blur-sm space-y-3 shadow-inner">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">Versões de Transcrição</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-350">
+                <thead className="bg-slate-950/45 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
+                  <tr>
+                    <th className="px-4 py-2.5">Versão</th>
+                    <th className="px-4 py-2.5">Data de Criação</th>
+                    <th className="px-4 py-2.5">Idioma</th>
+                    <th className="px-4 py-2.5">Método</th>
+                    <th className="px-4 py-2.5">Tamanho (Char)</th>
+                    <th className="px-4 py-2.5">Status</th>
+                    <th className="px-4 py-2.5">Duplicata</th>
+                    <th className="px-4 py-2.5 text-right">Ação</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900/40">
+                  {transcripts.map((t) => {
+                    const isSelected = selectedTranscript?.id === t.id;
+                    const methodLabels: Record<string, string> = {
+                      manual_caption: "Legenda Manual (YouTube)",
+                      auto_caption: "Legenda Automática (YouTube)",
+                      manual: "Manual (Enviada)",
+                      audio_to_text_future: "Áudio para Texto"
+                    };
+                    const duplicateVer = t.duplicate_of_transcript_id
+                      ? transcripts.find(x => x.id === t.duplicate_of_transcript_id)?.version_number
+                      : null;
+                    return (
+                      <tr
+                        key={t.id}
+                        className={cn(
+                          "transition-colors",
+                          isSelected ? "bg-indigo-500/10 text-white font-medium" : "hover:bg-slate-900/35"
+                        )}
+                      >
+                        <td className="px-4 py-2.5">
+                          <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-mono font-bold border", isSelected ? "bg-indigo-600 border-indigo-400 text-white" : "bg-slate-900 border-slate-800 text-slate-450")}>
+                            v{t.version_number}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-400 font-mono">
+                          {formatDate(t.created_at)}
+                        </td>
+                        <td className="px-4 py-2.5 uppercase font-mono font-bold text-slate-400">
+                          {t.language || "-"}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-300">
+                          {methodLabels[t.source_method] || t.source_method}
+                        </td>
+                        <td className="px-4 py-2.5 font-mono text-slate-400">
+                          {t.full_text ? t.full_text.length : 0}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {t.is_active ? (
+                            <span className="inline-flex items-center gap-1 rounded bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 text-[10px] font-bold text-emerald-400 tracking-wide uppercase">
+                              Ativa
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 rounded bg-slate-900 border border-slate-800/80 px-2 py-0.5 text-[10px] font-bold text-slate-400 tracking-wide uppercase">
+                              Inativa
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          {duplicateVer ? (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-amber-400 font-medium bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10" title="Mesmo conteúdo textual">
+                              Cópia de v{duplicateVer}
+                            </span>
+                          ) : (
+                            <span className="text-slate-500 text-[11px]">-</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5 text-right">
+                          <button
+                            onClick={() => {
+                              setSelectedTranscript(t);
+                              loadSegments(t.id);
+                              toast.info(`Visualizando versão v${t.version_number}`);
+                            }}
+                            disabled={isSelected}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded px-2.5 py-1 text-xs font-semibold transition-all shadow-sm",
+                              isSelected
+                                ? "bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 cursor-default"
+                                : "bg-slate-900 border border-slate-800 hover:bg-slate-800 hover:text-white text-slate-350"
+                            )}
+                          >
+                            <span>Selecionar</span>
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
         {/* Navigation Tabs */}
         <div className="flex border-b border-slate-800">
           <button
@@ -489,6 +592,7 @@ export default function ReferenceDetailPage() {
                         <th className="px-5 py-3">Método</th>
                         <th className="px-5 py-3">Idioma</th>
                         <th className="px-5 py-3">Legenda</th>
+                        <th className="px-5 py-3">Versão Gerada</th>
                         <th className="px-5 py-3">Logs de Erro</th>
                       </tr>
                     </thead>
@@ -531,6 +635,22 @@ export default function ReferenceDetailPage() {
                             </td>
                             <td className="px-5 py-3 text-slate-450 capitalize">
                               {job.selected_caption_type?.replace("_", " ") || "-"}
+                            </td>
+                            <td className="px-5 py-3">
+                              {job.raw_result_json?.version_number ? (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className="inline-flex items-center rounded-full bg-indigo-500/10 border border-indigo-500/20 px-2 py-0.5 text-[11px] font-mono font-bold text-indigo-400 select-none">
+                                    v{job.raw_result_json.version_number}
+                                  </span>
+                                  {job.raw_result_json.same_hash_as_previous && (
+                                    <span className="text-[10px] text-amber-500 bg-amber-500/5 px-1 py-0.5 rounded border border-amber-500/10 font-medium">
+                                      Mesmo conteúdo
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-slate-500">-</span>
+                              )}
                             </td>
                             <td className="px-5 py-3 text-rose-400 max-w-[200px] truncate" title={job.error_message || ""}>
                               {job.error_message || "-"}
