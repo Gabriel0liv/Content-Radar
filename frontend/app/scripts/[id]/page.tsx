@@ -208,6 +208,7 @@ export default function VideoWorkspacePage() {
   const [project, setProject] = useState<VideoProject | null>(null);
   const [items, setItems] = useState<VideoProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [pageError, setPageError] = useState<string | null>(null);
   const [savingScript, setSavingScript] = useState(false);
   const [savingBoard, setSavingBoard] = useState(false);
   const [creatingQuickItem, setCreatingQuickItem] = useState<VideoProjectItemType | null>(null);
@@ -314,33 +315,54 @@ export default function VideoWorkspacePage() {
   }, []);
 
   const loadProjectWorkspace = useCallback(async () => {
-    try {
-      setLoading(true);
-      const [projectResponse, itemsResponse, boardResponse] = await Promise.all([
-        getVideoProject(projectId),
-        getVideoProjectItems(projectId),
-        getVideoProjectBoard(projectId),
-      ]);
+    setLoading(true);
+    setPageError(null);
 
+    let projectResponse: VideoProject;
+
+    try {
+      projectResponse = await getVideoProject(projectId);
       setProject(projectResponse);
-      setItems(itemsResponse);
       setScriptWordCount(projectResponse.word_count);
       setScriptDuration(projectResponse.estimated_duration_seconds || 0);
+    } catch (error: any) {
+      setProject(null);
+      setPageError(error.message || "Nao foi possivel carregar este projeto de video.");
+      setItems([]);
+      setNodes([]);
+      setEdges([]);
+      syncSelectedNodeDraft(null, []);
+      setLoading(false);
+      return;
+    }
 
-      if (editor) {
-        if (projectResponse.script_content_json) {
-          editor.commands.setContent(projectResponse.script_content_json);
-        } else {
-          editor.commands.setContent(projectResponse.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
-        }
+    if (editor) {
+      if (projectResponse.script_content_json) {
+        editor.commands.setContent(projectResponse.script_content_json);
+      } else {
+        editor.commands.setContent(projectResponse.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
       }
+    }
 
+    try {
+      const itemsResponse = await getVideoProjectItems(projectId);
+      setItems(itemsResponse);
+    } catch (error: any) {
+      setItems([]);
+      toast.error(error.message || "Nao foi possivel carregar os elementos da oficina.");
+    }
+
+    try {
+      const boardResponse = await getVideoProjectBoard(projectId);
       const { mappedNodes, mappedEdges } = mapBoardToReactFlow(boardResponse.nodes, boardResponse.edges);
       setNodes(mappedNodes);
       setEdges(mappedEdges);
       syncSelectedNodeDraft(null, mappedNodes);
     } catch (error: any) {
-      toast.error(error.message || "Erro ao carregar a oficina.");
+      setNodes([]);
+      setEdges([]);
+      syncSelectedNodeDraft(null, []);
+      toast.error(error.message || "Nao foi possivel carregar o quadro deste projeto.");
     } finally {
       setLoading(false);
     }
@@ -733,12 +755,39 @@ export default function VideoWorkspacePage() {
 
   const importPanelItems = filteredItems.filter((item) => !nodes.some((node: Node<WorkshopNodeData>) => node.data.itemId === item.id));
 
-  if (loading || !project) {
+  if (loading) {
     return (
       <div className="flex min-h-[70vh] items-center justify-center">
         <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-5 py-4 text-sm text-slate-300">
           <Loader2 className="h-4 w-4 animate-spin" />
           Carregando oficina...
+        </div>
+      </div>
+    );
+  }
+
+  if (pageError || !project) {
+    return (
+      <div className="flex min-h-[70vh] items-center justify-center px-4">
+        <div className="w-full max-w-xl rounded-3xl border border-rose-900/50 bg-slate-950/80 p-8 text-center shadow-2xl shadow-slate-950/30">
+          <div className="text-lg font-semibold text-white">Nao foi possivel abrir a oficina</div>
+          <p className="mt-3 text-sm leading-relaxed text-slate-400">
+            {pageError || "Projeto de video nao encontrado."}
+          </p>
+          <div className="mt-6 flex items-center justify-center gap-3">
+            <button
+              onClick={loadProjectWorkspace}
+              className="rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-800"
+            >
+              Tentar novamente
+            </button>
+            <Link
+              href="/scripts"
+              className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
+            >
+              Voltar para scripts
+            </Link>
+          </div>
         </div>
       </div>
     );
