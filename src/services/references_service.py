@@ -277,7 +277,7 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
                 if not parsed_segments:
                     raise ValueError("Nenhum segmento textual pôde ser extraído do arquivo de legenda VTT.")
                     
-                full_text = " ".join([seg["text"] for seg in parsed_segments])
+                full_text = importer.build_clean_full_text(parsed_segments)
                 normalized_text = " ".join(full_text.split())
                 full_text_hash = hashlib.sha256(normalized_text.encode("utf-8")).hexdigest()
 
