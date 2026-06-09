@@ -61,7 +61,7 @@ class VideoProjectListResponse(BaseModel):
     offset: int
 
 
-# Video Project Note schemas
+# Video Project Note schemas (legacy — kept for backward compat)
 class VideoProjectNoteCreate(BaseModel):
     note_type: Optional[str] = "idea"
     title: Optional[str] = None
@@ -91,7 +91,7 @@ class VideoProjectNoteRead(BaseModel):
         from_attributes = True
 
 
-# Video Project Reference schemas
+# Video Project Reference schemas (legacy — kept for backward compat)
 class VideoProjectReferenceCreate(BaseModel):
     content_item_id: Optional[int] = None
     reference_source_id: Optional[int] = None
@@ -115,7 +115,7 @@ class VideoProjectReferenceRead(BaseModel):
         from_attributes = True
 
 
-# Video Project Audio Idea schemas
+# Video Project Audio Idea schemas (legacy — kept for backward compat)
 class VideoProjectAudioIdeaCreate(BaseModel):
     audio_title: Optional[str] = None
     audio_url: Optional[str] = None
@@ -141,10 +141,71 @@ class VideoProjectAudioIdeaRead(BaseModel):
         from_attributes = True
 
 
-# Video Project Board Node schemas
+# ─── VideoProjectItem schemas (unified workshop elements) ────────────────────
+
+VALID_ITEM_TYPES = (
+    "note", "reference", "script_excerpt", "audio",
+    "thumbnail", "production", "todo", "image", "group", "other"
+)
+
+class VideoProjectItemCreate(BaseModel):
+    item_type: Optional[str] = "note"
+    title: Optional[str] = None
+    body: Optional[str] = None
+    url: Optional[str] = None
+    source_kind: Optional[str] = "manual"
+    source_id: Optional[int] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+    status: Optional[str] = "open"
+    pinned: Optional[bool] = False
+
+class VideoProjectItemUpdate(BaseModel):
+    item_type: Optional[str] = None
+    title: Optional[str] = None
+    body: Optional[str] = None
+    url: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_id: Optional[int] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+    status: Optional[str] = None
+    pinned: Optional[bool] = None
+
+class VideoProjectItemRead(BaseModel):
+    id: int
+    video_project_id: int
+    item_type: str
+    title: Optional[str] = None
+    body: Optional[str] = None
+    url: Optional[str] = None
+    source_kind: Optional[str] = None
+    source_id: Optional[int] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+    status: str
+    pinned: bool
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+class VideoProjectItemFromScriptExcerpt(BaseModel):
+    text: str
+    title: Optional[str] = None
+
+class VideoProjectBoardNodeFromItem(BaseModel):
+    item_id: int
+    x: float = 200.0
+    y: float = 200.0
+    width: Optional[float] = 200.0
+    height: Optional[float] = 100.0
+
+
+# ─── Board Node schemas ──────────────────────────────────────────────────────
+
 class VideoProjectBoardNodeCreate(BaseModel):
     node_key: str
     node_type: Optional[str] = "note"
+    item_id: Optional[int] = None
     title: Optional[str] = None
     body: Optional[str] = None
     x: float = 0.0
@@ -156,6 +217,7 @@ class VideoProjectBoardNodeCreate(BaseModel):
 
 class VideoProjectBoardNodeUpdate(BaseModel):
     node_type: Optional[str] = None
+    item_id: Optional[int] = None
     title: Optional[str] = None
     body: Optional[str] = None
     x: Optional[float] = None
@@ -168,6 +230,7 @@ class VideoProjectBoardNodeUpdate(BaseModel):
 class VideoProjectBoardNodeRead(BaseModel):
     id: int
     video_project_id: int
+    item_id: Optional[int] = None
     node_key: str
     node_type: str
     title: Optional[str] = None
@@ -185,7 +248,8 @@ class VideoProjectBoardNodeRead(BaseModel):
         from_attributes = True
 
 
-# Video Project Board Edge schemas
+# ─── Board Edge schemas ──────────────────────────────────────────────────────
+
 class VideoProjectBoardEdgeCreate(BaseModel):
     edge_key: str
     source_node_key: str
@@ -211,12 +275,13 @@ class VideoProjectBoardEdgeRead(BaseModel):
         from_attributes = True
 
 
-# Unified Board State schema
+# ─── Unified Board State schemas ─────────────────────────────────────────────
+
 class VideoProjectBoardStateRead(BaseModel):
     nodes: List[VideoProjectBoardNodeRead] = []
     edges: List[VideoProjectBoardEdgeRead] = []
 
-# Board upsert schema — used by the PUT /board endpoint (no read-only fields required)
+# Upsert schema — used by PUT /board (no read-only fields required)
 class VideoProjectBoardStateUpsert(BaseModel):
     nodes: List[VideoProjectBoardNodeCreate] = []
     edges: List[VideoProjectBoardEdgeCreate] = []

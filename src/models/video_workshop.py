@@ -32,6 +32,7 @@ class VideoProject(Base):
     audio_ideas = relationship("VideoProjectAudioIdea", back_populates="video_project", cascade="all, delete-orphan")
     board_nodes = relationship("VideoProjectBoardNode", back_populates="video_project", cascade="all, delete-orphan")
     board_edges = relationship("VideoProjectBoardEdge", back_populates="video_project", cascade="all, delete-orphan")
+    items = relationship("VideoProjectItem", back_populates="video_project", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
@@ -58,7 +59,6 @@ class VideoProjectNote(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # Relationships
     video_project = relationship("VideoProject", back_populates="project_notes")
 
     __table_args__ = (
@@ -91,7 +91,6 @@ class VideoProjectReference(Base):
     note = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     video_project = relationship("VideoProject", back_populates="references")
     content_item = relationship("ContentItem")
     reference_source = relationship("ReferenceSource")
@@ -119,7 +118,6 @@ class VideoProjectAudioIdea(Base):
     usage_notes = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     video_project = relationship("VideoProject", back_populates="audio_ideas")
 
     __table_args__ = (
@@ -129,11 +127,41 @@ class VideoProjectAudioIdea(Base):
     )
 
 
+class VideoProjectItem(Base):
+    """Unified workshop element — replaces separate notes/refs/audio in new UI."""
+    __tablename__ = "video_project_items"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    video_project_id = Column(BigInteger, ForeignKey("video_projects.id", ondelete="CASCADE"), nullable=False)
+    item_type = Column(Text, nullable=False, server_default="note")
+    title = Column(Text, nullable=True)
+    body = Column(Text, nullable=True)
+    url = Column(Text, nullable=True)
+    source_kind = Column(Text, nullable=True, server_default="manual")
+    source_id = Column(BigInteger, nullable=True)
+    metadata_json = Column(JSONB, nullable=True)
+    status = Column(Text, nullable=False, server_default="open")
+    pinned = Column(Boolean, nullable=False, server_default="false")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    video_project = relationship("VideoProject", back_populates="items")
+    board_nodes = relationship("VideoProjectBoardNode", back_populates="item")
+
+    __table_args__ = (
+        Index("idx_vpi_project_id2", video_project_id),
+        Index("idx_vpi_item_type2", item_type),
+        Index("idx_vpi_status2", status),
+        Index("idx_vpi_pinned2", pinned),
+    )
+
+
 class VideoProjectBoardNode(Base):
     __tablename__ = "video_project_board_nodes"
 
     id = Column(BigInteger, primary_key=True, autoincrement=True)
     video_project_id = Column(BigInteger, ForeignKey("video_projects.id", ondelete="CASCADE"), nullable=False)
+    item_id = Column(BigInteger, ForeignKey("video_project_items.id", ondelete="SET NULL"), nullable=True)
     node_key = Column(Text, nullable=False)
     node_type = Column(Text, nullable=False, server_default="note")
     title = Column(Text, nullable=True)
@@ -147,8 +175,8 @@ class VideoProjectBoardNode(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # Relationships
     video_project = relationship("VideoProject", back_populates="board_nodes")
+    item = relationship("VideoProjectItem", back_populates="board_nodes")
 
     __table_args__ = (
         UniqueConstraint("video_project_id", "node_key", name="unique_video_project_board_nodes_project_id_node_key"),
@@ -169,7 +197,6 @@ class VideoProjectBoardEdge(Base):
     data_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     video_project = relationship("VideoProject", back_populates="board_edges")
 
     __table_args__ = (

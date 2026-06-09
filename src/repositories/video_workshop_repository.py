@@ -8,6 +8,7 @@ from src.models.video_workshop import (
     VideoProjectNote,
     VideoProjectReference,
     VideoProjectAudioIdea,
+    VideoProjectItem,
     VideoProjectBoardNode,
     VideoProjectBoardEdge
 )
@@ -18,6 +19,8 @@ from src.schemas.video_workshop import (
     VideoProjectNoteUpdate,
     VideoProjectReferenceCreate,
     VideoProjectAudioIdeaCreate,
+    VideoProjectItemCreate,
+    VideoProjectItemUpdate,
     VideoProjectBoardNodeCreate,
     VideoProjectBoardNodeUpdate,
     VideoProjectBoardEdgeCreate
@@ -27,7 +30,8 @@ class VideoWorkshopRepository:
     def __init__(self, db: Session):
         self.db = db
 
-    # --- Video Projects CRUD ---
+    # ── Video Projects CRUD ──────────────────────────────────────────────────
+
     def create_video_project(self, project_in: VideoProjectCreate) -> VideoProject:
         project_data = project_in.model_dump()
         db_project = VideoProject(**project_data)
@@ -109,8 +113,8 @@ class VideoWorkshopRepository:
             db_project.updated_at = datetime.now(timezone.utc)
             self.db.commit()
 
+    # ── Notes CRUD (legacy) ──────────────────────────────────────────────────
 
-    # --- Notes CRUD ---
     def get_note_by_id(self, note_id: int) -> Optional[VideoProjectNote]:
         return self.db.query(VideoProjectNote).filter(VideoProjectNote.id == note_id).first()
 
@@ -141,6 +145,7 @@ class VideoWorkshopRepository:
         db_note.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(db_note)
+        self.touch_video_project(db_note.video_project_id)
         return db_note
 
     def delete_note(self, note_id: int) -> bool:
@@ -153,8 +158,8 @@ class VideoWorkshopRepository:
         self.touch_video_project(project_id)
         return True
 
+    # ── References CRUD (legacy) ─────────────────────────────────────────────
 
-    # --- References CRUD ---
     def get_reference_by_id(self, reference_id: int) -> Optional[VideoProjectReference]:
         return self.db.query(VideoProjectReference).filter(VideoProjectReference.id == reference_id).first()
 
@@ -183,8 +188,8 @@ class VideoWorkshopRepository:
         self.touch_video_project(project_id)
         return True
 
+    # ── Audio Ideas CRUD (legacy) ────────────────────────────────────────────
 
-    # --- Audio Ideas CRUD ---
     def get_audio_idea_by_id(self, audio_id: int) -> Optional[VideoProjectAudioIdea]:
         return self.db.query(VideoProjectAudioIdea).filter(VideoProjectAudioIdea.id == audio_id).first()
 
@@ -213,8 +218,102 @@ class VideoWorkshopRepository:
         self.touch_video_project(project_id)
         return True
 
+    # ── VideoProjectItem CRUD ────────────────────────────────────────────────
 
-    # --- Board Nodes CRUD ---
+    def get_item_by_id(self, item_id: int) -> Optional[VideoProjectItem]:
+        return self.db.query(VideoProjectItem).filter(VideoProjectItem.id == item_id).first()
+
+    def list_items_by_project(
+        self,
+        project_id: int,
+        item_type: Optional[str] = None,
+        status: Optional[str] = None,
+        pinned: Optional[bool] = None
+    ) -> List[VideoProjectItem]:
+        query = self.db.query(VideoProjectItem).filter(VideoProjectItem.video_project_id == project_id)
+        if item_type:
+            query = query.filter(VideoProjectItem.item_type == item_type)
+        if status:
+            query = query.filter(VideoProjectItem.status == status)
+        if pinned is not None:
+            query = query.filter(VideoProjectItem.pinned == pinned)
+        return query.order_by(VideoProjectItem.pinned.desc(), VideoProjectItem.updated_at.desc()).all()
+
+    def create_item(self, project_id: int, item_in: VideoProjectItemCreate) -> VideoProjectItem:
+        item_data = item_in.model_dump()
+        item_data["video_project_id"] = project_id
+        db_item = VideoProjectItem(**item_data)
+        self.db.add(db_item)
+        self.db.commit()
+        self.db.refresh(db_item)
+        self.touch_video_project(project_id)
+        return db_item
+
+    def update_item(self, item_id: int, item_in: VideoProjectItemUpdate) -> Optional[VideoProjectItem]:
+        db_item = self.get_item_by_id(item_id)
+        if not db_item:
+            return None
+        update_data = item_in.model_dump(exclude_unset=True)
+        for key, value in update_data.items():
+            setattr(db_item, key, value)
+        db_item.updated_at = datetime.now(timezone.utc)
+        self.db.commit()
+        self.db.refresh(db_item)
+        self.touch_video_project(db_item.video_project_id)
+        return db_item
+
+    def delete_item(self, item_id: int) -> bool:
+        db_item = self.get_item_by_id(item_id)
+        if not db_item:
+            return False
+        project_id = db_item.video_project_id
+        self.db.delete(db_item)
+        self.db.commit()
+        self.touch_video_project(project_id)
+        return True
+
+    def create_item_from_script_excerpt(
+        self, project_id: int, text: str, title: Optional[str] = None
+    ) -> VideoProjectItem:
+        item_in = VideoProjectItemCreate(
+            item_type="script_excerpt",
+            title=title or "Trecho do Roteiro",
+            body=text,
+            source_kind="script",
+            status="open",
+            pinned=False
+        )
+        return self.create_item(project_id, item_in)
+
+    def create_board_node_from_item(
+        self,
+        project_id: int,
+        item_id: int,
+        x: float = 200.0,
+        y: float = 200.0,
+        width: Optional[float] = 200.0,
+        height: Optional[float] = 100.0
+    ) -> Optional[VideoProjectBoardNode]:
+        db_item = self.get_item_by_id(item_id)
+        if not db_item or db_item.video_project_id != project_id:
+            return None
+
+        node_key = f"item-{item_id}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
+        node_in = VideoProjectBoardNodeCreate(
+            node_key=node_key,
+            node_type=db_item.item_type,
+            item_id=item_id,
+            title=db_item.title,
+            body=db_item.body,
+            x=x,
+            y=y,
+            width=width,
+            height=height
+        )
+        return self.create_board_node(project_id, node_in)
+
+    # ── Board Nodes CRUD ─────────────────────────────────────────────────────
+
     def get_board_node_by_id(self, node_id: int) -> Optional[VideoProjectBoardNode]:
         return self.db.query(VideoProjectBoardNode).filter(VideoProjectBoardNode.id == node_id).first()
 
@@ -230,6 +329,7 @@ class VideoWorkshopRepository:
         self.db.add(db_node)
         self.db.commit()
         self.db.refresh(db_node)
+        self.touch_video_project(project_id)
         return db_node
 
     def update_board_node(self, node_id: int, node_in: VideoProjectBoardNodeUpdate) -> Optional[VideoProjectBoardNode]:
@@ -244,23 +344,25 @@ class VideoWorkshopRepository:
         db_node.updated_at = datetime.now(timezone.utc)
         self.db.commit()
         self.db.refresh(db_node)
+        self.touch_video_project(db_node.video_project_id)
         return db_node
 
     def delete_board_node(self, node_id: int) -> bool:
         db_node = self.get_board_node_by_id(node_id)
         if not db_node:
             return False
-        # Fix 7: cascade delete edges that reference this node
+        # Cascade delete edges that reference this node
         self.db.query(VideoProjectBoardEdge).filter(
             (VideoProjectBoardEdge.source_node_key == db_node.node_key) |
             (VideoProjectBoardEdge.target_node_key == db_node.node_key)
         ).delete(synchronize_session=False)
         self.db.delete(db_node)
         self.db.commit()
+        self.touch_video_project(db_node.video_project_id)
         return True
 
+    # ── Board Edges CRUD ─────────────────────────────────────────────────────
 
-    # --- Board Edges CRUD ---
     def get_board_edge_by_id(self, edge_id: int) -> Optional[VideoProjectBoardEdge]:
         return self.db.query(VideoProjectBoardEdge).filter(VideoProjectBoardEdge.id == edge_id).first()
 
@@ -276,6 +378,7 @@ class VideoWorkshopRepository:
         self.db.add(db_edge)
         self.db.commit()
         self.db.refresh(db_edge)
+        self.touch_video_project(project_id)
         return db_edge
 
     def delete_board_edge(self, edge_id: int) -> bool:
@@ -284,10 +387,11 @@ class VideoWorkshopRepository:
             return False
         self.db.delete(db_edge)
         self.db.commit()
+        self.touch_video_project(db_edge.video_project_id)
         return True
 
+    # ── Full Board State Sync ────────────────────────────────────────────────
 
-    # --- Full Board State Sync ---
     def sync_board_state(
         self,
         project_id: int,
@@ -317,8 +421,8 @@ class VideoWorkshopRepository:
             edges.append(db_e)
 
         self.db.commit()
+        self.touch_video_project(project_id)
 
-        # Refresh
         for n in nodes:
             self.db.refresh(n)
         for e in edges:

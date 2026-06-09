@@ -1,1515 +1,1431 @@
 "use client";
 
-import { useEffect, useState, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter, useParams } from "next/navigation";
-import { useEditor, EditorContent } from "@tiptap/react";
+import { useParams, useRouter } from "next/navigation";
+import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import ReactFlow, {
-  Controls,
-  Background,
-  useNodesState,
-  useEdgesState,
   addEdge,
+  Background,
   Connection,
   Edge,
+  MarkerType,
   Node,
-  MarkerType
+  NodeProps,
+  Panel,
+  ReactFlowInstance,
+  useEdgesState,
+  useNodesState,
 } from "reactflow";
 import "reactflow/dist/style.css";
 
 import {
-  getVideoProject,
-  updateVideoProject,
   archiveVideoProject,
+  createBoardNodeFromItem,
+  createVideoProjectItem,
+  createVideoProjectItemFromScriptExcerpt,
   deleteVideoProject,
-  getVideoProjectNotes,
-  createVideoProjectNote,
-  updateVideoProjectNote,
-  deleteVideoProjectNote,
-  getVideoProjectReferences,
-  createVideoProjectReference,
-  deleteVideoProjectReference,
-  getVideoProjectAudioIdeas,
-  createVideoProjectAudioIdea,
-  deleteVideoProjectAudioIdea,
+  deleteVideoProjectItem,
+  getVideoProject,
   getVideoProjectBoard,
+  getVideoProjectItems,
   saveVideoProjectBoard,
-  getContentItems,
-  getReferenceSources
+  updateVideoProject,
+  updateVideoProjectItem,
 } from "@/lib/api";
 import {
   VideoProject,
-  VideoProjectNote,
-  VideoProjectNoteType,
-  VideoProjectReference,
-  VideoProjectAudioIdea,
-  VideoProjectBoardNode,
   VideoProjectBoardEdge,
-  ContentItem,
-  ReferenceSource
+  VideoProjectBoardNode,
+  VideoProjectItem,
+  VideoProjectItemType,
 } from "@/lib/types";
 import {
   ArrowLeft,
-  Save,
-  Loader2,
-  Trash2,
-  Plus,
-  BookOpen,
-  Pin,
-  Tag,
-  Link2,
-  Music,
-  Maximize2,
-  Layout,
-  Clock,
-  Bold,
-  Italic,
-  Heading1,
-  Heading2,
-  List,
   Archive,
-  Volume2,
-  Disc,
-  Play,
-  Sliders,
-  AlertCircle
+  BookOpen,
+  CheckSquare,
+  Copy,
+  FileImage,
+  Film,
+  FolderKanban,
+  Link2,
+  Loader2,
+  Music,
+  Plus,
+  Save,
+  Sparkles,
+  StickyNote,
+  Trash2,
+  Type,
+  ZoomIn,
+  ZoomOut,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-// Status configuration for visual badges
-const statusConfig: Record<string, { label: string; class: string }> = {
-  idea: { label: "Ideia", class: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20" },
-  researching: { label: "Pesquisando", class: "bg-blue-500/10 text-blue-400 border-blue-500/20" },
-  scripting: { label: "Roteirizando", class: "bg-amber-500/10 text-amber-400 border-amber-500/20" },
-  reviewing: { label: "Revisando", class: "bg-purple-500/10 text-purple-400 border-purple-500/20" },
-  ready: { label: "Pronto", class: "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" },
-  produced: { label: "Produzido", class: "bg-slate-500/10 text-slate-300 border-slate-500/20" },
-  archived: { label: "Arquivado", class: "bg-rose-500/10 text-rose-400 border-rose-500/20" }
+type PageTab = "roteiro" | "quadro" | "elementos";
+type LibraryFilter = "all" | VideoProjectItemType;
+
+type WorkshopNodeData = {
+  itemId?: number | null;
+  itemType: VideoProjectItemType;
+  title: string;
+  body: string;
+  url?: string;
+  status?: string;
+  pinned?: boolean;
+  color: string;
 };
 
-// Available colors for board nodes — stores real CSS values, NOT Tailwind classes
-const colors: { name: string; bg: string; border: string; text: string }[] = [
-  { name: "Gray",    bg: "rgba(15,23,42,0.8)",   border: "#334155", text: "#cbd5e1" },
-  { name: "Blue",    bg: "rgba(23,37,84,0.6)",   border: "#1e40af", text: "#bfdbfe" },
-  { name: "Emerald", bg: "rgba(6,46,37,0.6)",    border: "#065f46", text: "#a7f3d0" },
-  { name: "Indigo",  bg: "rgba(30,27,75,0.6)",   border: "#3730a3", text: "#c7d2fe" },
-  { name: "Purple",  bg: "rgba(46,16,101,0.6)",  border: "#6b21a8", text: "#e9d5ff" },
-  { name: "Orange",  bg: "rgba(67,20,7,0.6)",    border: "#9a3412", text: "#fed7aa" },
-  { name: "Rose",    bg: "rgba(62,9,26,0.6)",    border: "#9f1239", text: "#fecdd3" }
+const statusConfig: Record<string, { label: string; className: string }> = {
+  idea: { label: "Ideia", className: "border-indigo-500/25 bg-indigo-500/10 text-indigo-300" },
+  researching: { label: "Pesquisa", className: "border-sky-500/25 bg-sky-500/10 text-sky-300" },
+  scripting: { label: "Roteiro", className: "border-amber-500/25 bg-amber-500/10 text-amber-300" },
+  reviewing: { label: "Revisao", className: "border-fuchsia-500/25 bg-fuchsia-500/10 text-fuchsia-300" },
+  ready: { label: "Pronto", className: "border-emerald-500/25 bg-emerald-500/10 text-emerald-300" },
+  produced: { label: "Produzido", className: "border-slate-500/25 bg-slate-500/10 text-slate-300" },
+  archived: { label: "Arquivado", className: "border-rose-500/25 bg-rose-500/10 text-rose-300" },
+};
+
+const colorOptions = [
+  { name: "slate", bg: "#0f172acc", border: "#334155", text: "#e2e8f0" },
+  { name: "indigo", bg: "#312e81cc", border: "#6366f1", text: "#e0e7ff" },
+  { name: "emerald", bg: "#064e3bcc", border: "#34d399", text: "#d1fae5" },
+  { name: "amber", bg: "#78350fcc", border: "#f59e0b", text: "#fef3c7" },
+  { name: "rose", bg: "#881337cc", border: "#fb7185", text: "#ffe4e6" },
+  { name: "sky", bg: "#0c4a6ecc", border: "#38bdf8", text: "#e0f2fe" },
+  { name: "zinc", bg: "#27272acc", border: "#71717a", text: "#f4f4f5" },
 ];
+
+const itemTypeMeta: Record<
+  VideoProjectItemType,
+  {
+    label: string;
+    description: string;
+    icon: typeof StickyNote;
+    defaultColor: string;
+  }
+> = {
+  note: { label: "Nota", description: "Ideias e observacoes", icon: StickyNote, defaultColor: "slate" },
+  reference: { label: "Referencia", description: "Link, fonte ou citacao", icon: Link2, defaultColor: "sky" },
+  script_excerpt: { label: "Trecho", description: "Recorte do roteiro", icon: Type, defaultColor: "indigo" },
+  audio: { label: "Musica/SFX", description: "Faixa, trilha ou efeito", icon: Music, defaultColor: "amber" },
+  thumbnail: { label: "Thumbnail", description: "Ideias visuais", icon: FileImage, defaultColor: "rose" },
+  production: { label: "Producao", description: "Passos de execucao", icon: Film, defaultColor: "emerald" },
+  todo: { label: "Tarefa", description: "Checklist acionavel", icon: CheckSquare, defaultColor: "emerald" },
+  image: { label: "Imagem", description: "Imagem de apoio", icon: FileImage, defaultColor: "zinc" },
+  group: { label: "Grupo", description: "Frame ou agrupamento", icon: FolderKanban, defaultColor: "zinc" },
+  other: { label: "Outro", description: "Elemento generico", icon: Sparkles, defaultColor: "slate" },
+};
+
+const quickCanvasTypes: VideoProjectItemType[] = [
+  "note",
+  "reference",
+  "script_excerpt",
+  "audio",
+  "thumbnail",
+  "todo",
+  "group",
+];
+
+function getColorDefinition(colorName?: string) {
+  return colorOptions.find((option) => option.name === colorName) || colorOptions[0];
+}
+
+function getNodeDimensions(itemType: VideoProjectItemType) {
+  if (itemType === "group") {
+    return { width: 320, height: 200 };
+  }
+  if (itemType === "script_excerpt") {
+    return { width: 260, height: 170 };
+  }
+  return { width: 220, height: 140 };
+}
+
+function WorkshopNode({ data, selected }: NodeProps<WorkshopNodeData>) {
+  const itemType = data.itemType as VideoProjectItemType;
+  const color = getColorDefinition(data.color);
+  const typeMeta = itemTypeMeta[itemType];
+  const Icon = typeMeta.icon;
+
+  return (
+    <div
+      style={{
+        background: color.bg,
+        color: color.text,
+        border: `1px solid ${color.border}`,
+        boxShadow: selected ? `0 0 0 2px ${color.border}` : "0 12px 30px rgba(2, 6, 23, 0.25)",
+      }}
+      className={cn(
+        "min-h-[110px] rounded-2xl px-4 py-3 backdrop-blur-sm transition-all",
+        itemType === "group" && "border-dashed"
+      )}
+    >
+      <div className="mb-2 flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <span className="rounded-full border border-white/10 bg-white/10 p-1.5">
+            <Icon className="h-3.5 w-3.5" />
+          </span>
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-[0.18em] opacity-70">
+              {typeMeta.label}
+            </div>
+            {data.pinned ? <div className="text-[10px] opacity-70">Fixado</div> : null}
+          </div>
+        </div>
+        {data.status === "done" ? (
+          <span className="rounded-full border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-200">
+            Done
+          </span>
+        ) : null}
+      </div>
+      <div className="space-y-2">
+        <h4 className="text-sm font-semibold leading-tight">
+          {data.title || typeMeta.label}
+        </h4>
+        {data.body ? (
+          <p className="line-clamp-5 whitespace-pre-wrap text-xs leading-relaxed opacity-90">
+            {data.body}
+          </p>
+        ) : null}
+        {data.url ? (
+          <div className="truncate text-[11px] font-medium opacity-80">{data.url}</div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+const nodeTypes = { workshopNode: WorkshopNode };
 
 export default function VideoWorkspacePage() {
   const router = useRouter();
   const params = useParams();
   const projectId = Number(params.id);
 
-  // States
   const [project, setProject] = useState<VideoProject | null>(null);
+  const [items, setItems] = useState<VideoProjectItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [savingScript, setSavingScript] = useState(false);
-  const [activeTab, setActiveTab] = useState<"roteiro" | "quadro" | "notas" | "referencias" | "musica">("roteiro");
-  const [editorInitialized, setEditorInitialized] = useState(false);
-
-  // Notes state
-  const [notes, setNotes] = useState<VideoProjectNote[]>([]);
-  const [newNoteBody, setNewNoteBody] = useState("");
-  const [newNoteType, setNewNoteType] = useState<VideoProjectNoteType>("idea");
-  const [newNoteTitle, setNewNoteTitle] = useState("");
-  const [noteFilter, setNoteFilter] = useState<string>("all");
-
-  // Note editing state (Fix 6)
-  const [editingNoteId, setEditingNoteId] = useState<number | null>(null);
-  const [editNoteTitle, setEditNoteTitle] = useState("");
-  const [editNoteBody, setEditNoteBody] = useState("");
-
-  // References state
-  const [references, setReferences] = useState<VideoProjectReference[]>([]);
-  const [refTitle, setRefTitle] = useState("");
-  const [refUrl, setRefUrl] = useState("");
-  const [selectedContentItemId, setSelectedContentItemId] = useState<string>("");
-  const [selectedRefSourceId, setSelectedRefSourceId] = useState<string>("");
-  const [selectedTranscriptId, setSelectedTranscriptId] = useState<string>("");
-  
-  const [allContentItems, setAllContentItems] = useState<ContentItem[]>([]);
-  const [allRefSources, setAllRefSources] = useState<ReferenceSource[]>([]);
-
-  // Audio Ideas state
-  const [audios, setAudios] = useState<VideoProjectAudioIdea[]>([]);
-  const [audioTitle, setAudioTitle] = useState("");
-  const [audioUrl, setAudioUrl] = useState("");
-  const [audioType, setAudioType] = useState("background_music");
-  const [audioMood, setAudioMood] = useState("");
-  const [audioLicense, setAudioLicense] = useState("");
-  const [audioUsage, setAudioUsage] = useState("");
-
-  // Canvas Board state
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [nodeTitleInput, setNodeTitleInput] = useState("");
-  const [nodeBodyInput, setNodeBodyInput] = useState("");
-  const [nodeColorInput, setNodeColorInput] = useState("Gray");
   const [savingBoard, setSavingBoard] = useState(false);
-
-  // Text script values (live stats)
+  const [creatingQuickItem, setCreatingQuickItem] = useState<VideoProjectItemType | null>(null);
+  const [activeTab, setActiveTab] = useState<PageTab>("roteiro");
+  const [showImportPanel, setShowImportPanel] = useState(false);
+  const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
+  const [libraryForm, setLibraryForm] = useState({
+    item_type: "note" as VideoProjectItemType,
+    title: "",
+    body: "",
+    url: "",
+    status: "open",
+    pinned: false,
+  });
+  const [editingItemId, setEditingItemId] = useState<number | null>(null);
+  const [editingItemDraft, setEditingItemDraft] = useState({
+    item_type: "note" as VideoProjectItemType,
+    title: "",
+    body: "",
+    url: "",
+    status: "open",
+    pinned: false,
+  });
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [nodeDraft, setNodeDraft] = useState({
+    title: "",
+    body: "",
+    url: "",
+    itemType: "note" as VideoProjectItemType,
+    color: "slate",
+  });
+  const [flowInstance, setFlowInstance] = useState<ReactFlowInstance | null>(null);
+  const [nodes, setNodes, onNodesChange] = useNodesState<WorkshopNodeData>([]);
+  const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [scriptWordCount, setScriptWordCount] = useState(0);
   const [scriptDuration, setScriptDuration] = useState(0);
 
-  // Tiptap setup
   const editor = useEditor({
     extensions: [StarterKit],
     content: "",
-    onUpdate: ({ editor }) => {
-      const text = editor.getText();
+    onUpdate: ({ editor: tiptapEditor }: { editor: { getText(): string } }) => {
+      const text = tiptapEditor.getText();
       const words = text.trim() ? text.trim().split(/\s+/).length : 0;
       setScriptWordCount(words);
       setScriptDuration(Math.round((words / 150) * 60));
-    }
+    },
   });
 
-  // Initialize editor content when both project and editor are ready
-  useEffect(() => {
-    if (project && editor && !editorInitialized) {
-      if (project.script_content_json) {
-        editor.commands.setContent(project.script_content_json);
-      } else {
-        editor.commands.setContent(project.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
-      }
-      setEditorInitialized(true);
+  const syncSelectedNodeDraft = useCallback((nodeId: string | null, currentNodes: Node<WorkshopNodeData>[]) => {
+    setSelectedNodeId(nodeId);
+    if (!nodeId) {
+      return;
     }
-  }, [project, editor, editorInitialized]);
+    const node = currentNodes.find((entry) => entry.id === nodeId);
+    if (!node) {
+      return;
+    }
+    setNodeDraft({
+      title: node.data.title || "",
+      body: node.data.body || "",
+      url: node.data.url || "",
+      itemType: node.data.itemType,
+      color: node.data.color,
+    });
+  }, []);
 
-  // Load project details and other tabs elements
-  const loadProjectData = useCallback(async () => {
+  const mapBoardToReactFlow = useCallback((boardNodes: VideoProjectBoardNode[], boardEdges: VideoProjectBoardEdge[]) => {
+    const mappedNodes: Node<WorkshopNodeData>[] = boardNodes.map((boardNode) => {
+      const itemType = (boardNode.node_type as VideoProjectItemType) || "note";
+      const colorName = boardNode.color || itemTypeMeta[itemType]?.defaultColor || "slate";
+      const dimensions = getNodeDimensions(itemType);
+      return {
+        id: boardNode.node_key,
+        type: "workshopNode",
+        position: { x: boardNode.x, y: boardNode.y },
+        data: {
+          itemId: boardNode.item_id ?? null,
+          itemType,
+          title: boardNode.title || "",
+          body: boardNode.body || "",
+          url: typeof boardNode.data_json?.url === "string" ? boardNode.data_json.url : "",
+          status: typeof boardNode.data_json?.status === "string" ? boardNode.data_json.status : "open",
+          pinned: Boolean(boardNode.data_json?.pinned),
+          color: colorName,
+        },
+        style: {
+          width: boardNode.width || dimensions.width,
+          height: boardNode.height || dimensions.height,
+        },
+      };
+    });
+
+    const mappedEdges: Edge[] = boardEdges.map((boardEdge) => ({
+      id: boardEdge.edge_key,
+      source: boardEdge.source_node_key,
+      target: boardEdge.target_node_key,
+      label: boardEdge.label || undefined,
+      animated: false,
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+      style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+    }));
+
+    return { mappedNodes, mappedEdges };
+  }, []);
+
+  const loadProjectWorkspace = useCallback(async () => {
     try {
       setLoading(true);
-      const proj = await getVideoProject(projectId);
-      setProject(proj);
-      setScriptWordCount(proj.word_count);
-      setScriptDuration(proj.estimated_duration_seconds || 0);
-
-      // Load sub-modules
-      const [projNotes, projRefs, projAudios, projBoard] = await Promise.all([
-        getVideoProjectNotes(projectId),
-        getVideoProjectReferences(projectId),
-        getVideoProjectAudioIdeas(projectId),
-        getVideoProjectBoard(projectId)
+      const [projectResponse, itemsResponse, boardResponse] = await Promise.all([
+        getVideoProject(projectId),
+        getVideoProjectItems(projectId),
+        getVideoProjectBoard(projectId),
       ]);
 
-      setNotes(projNotes);
-      setReferences(projRefs);
-      setAudios(projAudios);
+      setProject(projectResponse);
+      setItems(itemsResponse);
+      setScriptWordCount(projectResponse.word_count);
+      setScriptDuration(projectResponse.estimated_duration_seconds || 0);
 
-      // Board React Flow mapping
-      const mappedNodes: Node[] = projBoard.nodes.map(n => ({
-        id: n.node_key,
-        position: { x: n.x, y: n.y },
-        data: { label: n.title || n.body || "Nó do Quadro", title: n.title, body: n.body, color: n.color },
-        style: {
-          background: colors.find(c => c.name === n.color)?.bg || "rgba(15,23,42,0.8)",
-          color: colors.find(c => c.name === n.color)?.text || "#cbd5e1",
-          border: `1px solid ${colors.find(c => c.name === n.color)?.border || "#334155"}`,
-          borderRadius: "8px",
-          padding: "10px",
-          width: n.width || 160,
-          height: n.height || 80
+      if (editor) {
+        if (projectResponse.script_content_json) {
+          editor.commands.setContent(projectResponse.script_content_json);
+        } else {
+          editor.commands.setContent(projectResponse.script_text || "<p>Comece a escrever seu roteiro aqui...</p>");
         }
-      }));
+      }
 
-      const mappedEdges: Edge[] = projBoard.edges.map(e => ({
-        id: e.edge_key,
-        source: e.source_node_key,
-        target: e.target_node_key,
-        label: typeof e.label === "string" ? e.label : null,
-        animated: true,
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#6366f1" },
-        style: { stroke: "#6366f1" }
-      }));
-
+      const { mappedNodes, mappedEdges } = mapBoardToReactFlow(boardResponse.nodes, boardResponse.edges);
       setNodes(mappedNodes);
       setEdges(mappedEdges);
-
-    } catch (err: any) {
-      toast.error("Erro ao carregar dados do projeto.");
+      syncSelectedNodeDraft(null, mappedNodes);
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao carregar a oficina.");
     } finally {
       setLoading(false);
     }
-  }, [projectId, setNodes, setEdges]);
+  }, [editor, mapBoardToReactFlow, projectId, setEdges, setNodes, syncSelectedNodeDraft]);
 
-  // Load static references options
   useEffect(() => {
-    loadProjectData();
+    loadProjectWorkspace();
+  }, [loadProjectWorkspace]);
 
-    // Load sources for linking references dropdowns
-    getContentItems({ limit: 100 }).then(res => setAllContentItems(res.items)).catch(() => {});
-    getReferenceSources({ limit: 100 }).then(res => setAllRefSources(res.items)).catch(() => {});
-  }, [loadProjectData]);
+  const selectedNode = useMemo(
+    () => nodes.find((node: Node<WorkshopNodeData>) => node.id === selectedNodeId) || null,
+    [nodes, selectedNodeId]
+  );
 
-  // Save script data
+  const filteredItems = useMemo(() => {
+    const list = libraryFilter === "all"
+      ? items
+      : items.filter((item) => item.item_type === libraryFilter);
+
+    return [...list].sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+    });
+  }, [items, libraryFilter]);
+
   const handleSaveScript = async () => {
-    if (!project || !editor) return;
+    if (!editor || !project) return;
     try {
       setSavingScript(true);
-      const textContent = editor.getText();
-      const jsonContent = editor.getJSON();
-
       const updated = await updateVideoProject(projectId, {
-        script_text: textContent,
-        script_content_json: jsonContent
+        script_text: editor.getText(),
+        script_content_json: editor.getJSON(),
       });
-
       setProject(updated);
       setScriptWordCount(updated.word_count);
       setScriptDuration(updated.estimated_duration_seconds || 0);
-      toast.success("Roteiro salvo com sucesso!");
-    } catch (err: any) {
-      toast.error(`Erro ao salvar roteiro: ${err.message}`);
+      toast.success("Roteiro salvo.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao salvar roteiro.");
     } finally {
       setSavingScript(false);
     }
   };
 
-  // Update metadata fields directly
-  const handleUpdateMeta = async (fields: Partial<VideoProject>) => {
-    if (!project) return;
+  const handleUpdateProjectMeta = async (payload: Partial<VideoProject>) => {
     try {
-      const updated = await updateVideoProject(projectId, fields);
+      const updated = await updateVideoProject(projectId, payload);
       setProject(updated);
-      toast.success("Metadados atualizados!");
-    } catch (err: any) {
-      toast.error("Erro ao salvar metadados.");
+      toast.success("Projeto atualizado.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao atualizar projeto.");
     }
   };
 
-  // Archive project
-  const handleArchive = async () => {
+  const handleArchiveProject = async () => {
     try {
       await archiveVideoProject(projectId);
-      toast.success("Projeto arquivado!");
+      toast.success("Projeto arquivado.");
       router.push("/scripts");
-    } catch (err: any) {
-      toast.error("Erro ao arquivar projeto.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao arquivar projeto.");
     }
   };
 
-  // Delete project
   const handleDeleteProject = async () => {
-    if (!confirm("Tem certeza que deseja excluir permanentemente este projeto de vídeo? Todas as notas e quadro associados serão apagados.")) return;
+    if (!confirm("Excluir este projeto de video e toda a oficina?")) {
+      return;
+    }
     try {
       await deleteVideoProject(projectId);
-      toast.success("Projeto excluído com sucesso!");
+      toast.success("Projeto excluido.");
       router.push("/scripts");
-    } catch (err: any) {
-      toast.error("Erro ao excluir projeto.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao excluir projeto.");
     }
   };
 
-  // Notes operations
-  const handleCreateNote = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newNoteBody.trim()) return;
-
-    try {
-      const payload = {
-        title: newNoteTitle.trim() || null,
-        body: newNoteBody.trim(),
-        note_type: newNoteType,
-        status: "open",
-        pinned: false
-      };
-      const note = await createVideoProjectNote(projectId, payload);
-      setNotes([note, ...notes]);
-      setNewNoteTitle("");
-      setNewNoteBody("");
-      toast.success("Nota adicionada!");
-    } catch (err: any) {
-      toast.error("Erro ao adicionar nota.");
-    }
-  };
-
-  const handleTogglePinNote = async (note: VideoProjectNote) => {
-    try {
-      const updated = await updateVideoProjectNote(note.id, { pinned: !note.pinned });
-      setNotes(notes.map(n => n.id === note.id ? updated : n));
-      toast.success(updated.pinned ? "Nota fixada!" : "Nota desafixada.");
-    } catch (err: any) {
-      toast.error("Erro ao atualizar nota.");
-    }
-  };
-
-  const handleToggleNoteStatus = async (note: VideoProjectNote) => {
-    try {
-      const newStatus = note.status === "open" ? "done" : "open";
-      const updated = await updateVideoProjectNote(note.id, { status: newStatus });
-      setNotes(notes.map(n => n.id === note.id ? updated : n));
-      toast.success(newStatus === "done" ? "Tarefa concluída!" : "Tarefa reaberta.");
-    } catch (err: any) {
-      toast.error("Erro ao atualizar status da tarefa.");
-    }
-  };
-
-  const handleDeleteNote = async (noteId: number) => {
-    try {
-      await deleteVideoProjectNote(noteId);
-      setNotes(notes.filter(n => n.id !== noteId));
-      toast.success("Nota excluída.");
-    } catch (err: any) {
-      toast.error("Erro ao excluir nota.");
-    }
-  };
-
-  // Note editing handlers (Fix 6)
-  const handleStartEditNote = (note: VideoProjectNote) => {
-    setEditingNoteId(note.id);
-    setEditNoteTitle(note.title || "");
-    setEditNoteBody(note.body);
-  };
-
-  const handleCancelEditNote = () => {
-    setEditingNoteId(null);
-    setEditNoteTitle("");
-    setEditNoteBody("");
-  };
-
-  const handleSaveEditNote = async (noteId: number) => {
-    if (!editNoteBody.trim()) return;
-    try {
-      const updated = await updateVideoProjectNote(noteId, {
-        title: editNoteTitle.trim() || null,
-        body: editNoteBody.trim()
-      });
-      setNotes(notes.map(n => n.id === noteId ? updated : n));
-      setEditingNoteId(null);
-      toast.success("Nota atualizada!");
-    } catch (err: any) {
-      toast.error("Erro ao atualizar nota.");
-    }
-  };
-
-  const filteredNotes = useMemo(() => {
-    let result = notes;
-    if (noteFilter !== "all") {
-      result = result.filter(n => n.note_type === noteFilter);
-    }
-    // Sort: pinned first, then newest
-    return [...result].sort((a, b) => {
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    });
-  }, [notes, noteFilter]);
-
-
-  // References operations
-  const handleAddReference = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!refTitle.trim() && !selectedContentItemId && !selectedRefSourceId && !selectedTranscriptId && !refUrl.trim()) {
-      toast.error("Preencha pelo menos um campo para vincular a referência.");
-      return;
-    }
-
-    try {
-      const payload = {
-        title: refTitle.trim() || null,
-        external_url: refUrl.trim() || null,
-        content_item_id: selectedContentItemId ? Number(selectedContentItemId) : null,
-        reference_source_id: selectedRefSourceId ? Number(selectedRefSourceId) : null,
-        transcript_id: selectedTranscriptId ? Number(selectedTranscriptId) : null,
-      };
-
-      const ref = await createVideoProjectReference(projectId, payload);
-      setReferences([ref, ...references]);
-      setRefTitle("");
-      setRefUrl("");
-      setSelectedContentItemId("");
-      setSelectedRefSourceId("");
-      setSelectedTranscriptId("");
-      toast.success("Referência vinculada!");
-    } catch (err: any) {
-      toast.error("Erro ao vincular referência.");
-    }
-  };
-
-  const handleDeleteReference = async (refId: number) => {
-    try {
-      await deleteVideoProjectReference(refId);
-      setReferences(references.filter(r => r.id !== refId));
-      toast.success("Referência desvinculada.");
-    } catch (err: any) {
-      toast.error("Erro ao excluir referência.");
-    }
-  };
-
-
-  // Audio ideas operations
-  const handleAddAudio = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!audioTitle.trim()) {
-      toast.error("Título do áudio obrigatório.");
-      return;
-    }
-
-    try {
-      const payload = {
-        audio_title: audioTitle.trim(),
-        audio_url: audioUrl.trim() || null,
-        audio_type: audioType,
-        mood: audioMood.trim() || null,
-        license_notes: audioLicense.trim() || null,
-        usage_notes: audioUsage.trim() || null
-      };
-
-      const audio = await createVideoProjectAudioIdea(projectId, payload);
-      setAudios([audio, ...audios]);
-      setAudioTitle("");
-      setAudioUrl("");
-      setAudioMood("");
-      setAudioLicense("");
-      setAudioUsage("");
-      toast.success("Ideia de áudio vinculada!");
-    } catch (err: any) {
-      toast.error("Erro ao adicionar áudio.");
-    }
-  };
-
-  const handleDeleteAudio = async (audioId: number) => {
-    try {
-      await deleteVideoProjectAudioIdea(audioId);
-      setAudios(audios.filter(a => a.id !== audioId));
-      toast.success("Áudio desvinculado.");
-    } catch (err: any) {
-      toast.error("Erro ao excluir áudio.");
-    }
-  };
-
-
-  // Board Canvas operations
-  const onConnect = useCallback((connection: Connection) => {
-    const newEdge: Edge = {
-      id: `edge-${Date.now()}`,
-      source: connection.source!,
-      target: connection.target!,
-      animated: true,
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#6366f1" },
-      style: { stroke: "#6366f1" }
+  const createLocalNodeFromItem = useCallback((item: VideoProjectItem, itemId?: number | null) => {
+    const colorName = item.metadata_json?.color && typeof item.metadata_json.color === "string"
+      ? item.metadata_json.color
+      : itemTypeMeta[item.item_type].defaultColor;
+    const dimensions = getNodeDimensions(item.item_type);
+    return {
+      itemId: itemId ?? item.id,
+      itemType: item.item_type,
+      title: item.title || "",
+      body: item.body || "",
+      url: item.url || "",
+      status: item.status,
+      pinned: item.pinned,
+      color: colorName,
+      width: dimensions.width,
+      height: dimensions.height,
     };
-    setEdges((eds) => addEdge(newEdge, eds));
+  }, []);
+
+  const handleCreateLibraryItem = async (event: React.FormEvent) => {
+    event.preventDefault();
+    try {
+      const created = await createVideoProjectItem(projectId, libraryForm);
+      setItems((current) => [created, ...current]);
+      setLibraryForm({
+        item_type: "note",
+        title: "",
+        body: "",
+        url: "",
+        status: "open",
+        pinned: false,
+      });
+      toast.success("Elemento criado.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar elemento.");
+    }
+  };
+
+  const handleStartEditingItem = (item: VideoProjectItem) => {
+    setEditingItemId(item.id);
+    setEditingItemDraft({
+      item_type: item.item_type,
+      title: item.title || "",
+      body: item.body || "",
+      url: item.url || "",
+      status: item.status,
+      pinned: item.pinned,
+    });
+  };
+
+  const handleSaveEditingItem = async () => {
+    if (!editingItemId) return;
+    try {
+      const updated = await updateVideoProjectItem(editingItemId, editingItemDraft);
+      setItems((current) => current.map((item) => (item.id === editingItemId ? updated : item)));
+      setNodes((current: Node<WorkshopNodeData>[]) =>
+        current.map((node: Node<WorkshopNodeData>) =>
+          node.data.itemId === editingItemId
+            ? {
+                ...node,
+                data: {
+                  ...node.data,
+                  itemType: updated.item_type,
+                  title: updated.title || "",
+                  body: updated.body || "",
+                  url: updated.url || "",
+                  status: updated.status,
+                  pinned: updated.pinned,
+                },
+              }
+            : node
+        )
+      );
+      setEditingItemId(null);
+      toast.success("Elemento atualizado.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao atualizar elemento.");
+    }
+  };
+
+  const handleDeleteItem = async (itemId: number) => {
+    try {
+      await deleteVideoProjectItem(itemId);
+      setItems((current) => current.filter((item) => item.id !== itemId));
+      toast.success("Elemento removido.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao remover elemento.");
+    }
+  };
+
+  const handleAddItemToBoard = async (item: VideoProjectItem) => {
+    try {
+      const position = flowInstance?.project({ x: 320 + Math.random() * 120, y: 220 + Math.random() * 120 }) || {
+        x: 320 + Math.random() * 120,
+        y: 220 + Math.random() * 120,
+      };
+      const createdNode = await createBoardNodeFromItem(projectId, {
+        item_id: item.id,
+        x: position.x,
+        y: position.y,
+        width: getNodeDimensions(item.item_type).width,
+        height: getNodeDimensions(item.item_type).height,
+      });
+
+      const localNodeData = createLocalNodeFromItem(item, createdNode.item_id);
+      setNodes((current: Node<WorkshopNodeData>[]) => [
+        ...current,
+        {
+          id: createdNode.node_key,
+          type: "workshopNode",
+          position: { x: createdNode.x, y: createdNode.y },
+          data: {
+            itemId: localNodeData.itemId,
+            itemType: localNodeData.itemType,
+            title: localNodeData.title,
+            body: localNodeData.body,
+            url: localNodeData.url,
+            status: localNodeData.status,
+            pinned: localNodeData.pinned,
+            color: createdNode.color || localNodeData.color,
+          },
+          style: {
+            width: createdNode.width || localNodeData.width,
+            height: createdNode.height || localNodeData.height,
+          },
+        },
+      ]);
+      setActiveTab("quadro");
+      toast.success("Elemento adicionado ao quadro.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao adicionar elemento ao quadro.");
+    }
+  };
+
+  const handleCreateQuickCanvasItem = async (itemType: VideoProjectItemType) => {
+    try {
+      setCreatingQuickItem(itemType);
+      const itemMeta = itemTypeMeta[itemType];
+      const created = await createVideoProjectItem(projectId, {
+        item_type: itemType,
+        title: itemMeta.label,
+        body: itemType === "todo" ? "Defina a proxima acao." : "",
+        status: "open",
+        pinned: false,
+        metadata_json: { color: itemMeta.defaultColor },
+      });
+      setItems((current) => [created, ...current]);
+      await handleAddItemToBoard(created);
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar elemento no quadro.");
+    } finally {
+      setCreatingQuickItem(null);
+    }
+  };
+
+  const handleSendScriptExcerptToBoard = async () => {
+    if (!editor) return;
+    const { from, to } = editor.state.selection;
+    const text = editor.state.doc.textBetween(from, to, "\n").trim();
+    if (!text) {
+      toast.error("Selecione um trecho do roteiro primeiro.");
+      return;
+    }
+
+    try {
+      const created = await createVideoProjectItemFromScriptExcerpt(projectId, {
+        text,
+        title: text.slice(0, 42),
+      });
+      setItems((current) => [created, ...current]);
+      await handleAddItemToBoard(created);
+      toast.success("Trecho enviado para o quadro.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao enviar trecho para o quadro.");
+    }
+  };
+
+  const onConnect = useCallback((connection: Connection) => {
+    if (!connection.source || !connection.target) return;
+    setEdges((current: Edge[]) =>
+      addEdge(
+        {
+          id: `edge-${Date.now()}`,
+          source: connection.source,
+          target: connection.target,
+          markerEnd: { type: MarkerType.ArrowClosed, color: "#94a3b8" },
+          style: { stroke: "#94a3b8", strokeWidth: 1.5 },
+        },
+        current
+      )
+    );
   }, [setEdges]);
 
-  const handleAddBoardNode = () => {
-    const nodeKey = `node-${Date.now()}`;
-    const newNode: Node = {
-      id: nodeKey,
-      position: { x: 150 + Math.random() * 50, y: 150 + Math.random() * 50 },
-      data: { label: "Nova Nota", title: "Nova Nota", body: "Escreva algo...", color: "Gray" },
-      style: {
-        background: "rgba(15, 23, 42, 0.8)",
-        color: "#fff",
-        border: "1px solid #334155",
-        borderRadius: "8px",
-        padding: "10px",
-        width: 160,
-        height: 80
-      }
-    };
-    setNodes((nds) => [...nds, newNode]);
+  const handleSelectNode = (_event: unknown, node: Node<WorkshopNodeData>) => {
+    syncSelectedNodeDraft(node.id, nodes);
   };
 
-  const handleNodeClick = (_e: any, node: Node) => {
-    setSelectedNodeId(node.id);
-    setNodeTitleInput(node.data.title || "");
-    setNodeBodyInput(node.data.body || "");
-    setNodeColorInput(node.data.color || "Gray");
+  const handleDuplicateSelectedNode = async () => {
+    if (!selectedNode) return;
+    try {
+      const duplicatedItem = await createVideoProjectItem(projectId, {
+        item_type: nodeDraft.itemType,
+        title: nodeDraft.title || itemTypeMeta[nodeDraft.itemType].label,
+        body: nodeDraft.body || "",
+        url: nodeDraft.url || null,
+        status: selectedNode.data.status || "open",
+        pinned: selectedNode.data.pinned || false,
+        metadata_json: { color: nodeDraft.color },
+      });
+      setItems((current) => [duplicatedItem, ...current]);
+      await handleAddItemToBoard(duplicatedItem);
+      toast.success("Elemento duplicado.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao duplicar elemento.");
+    }
   };
 
-  const handleUpdateNodeProperties = () => {
+  const handleDeleteSelectedNode = () => {
     if (!selectedNodeId) return;
+    setNodes((current: Node<WorkshopNodeData>[]) => current.filter((node: Node<WorkshopNodeData>) => node.id !== selectedNodeId));
+    setEdges((current: Edge[]) => current.filter((edge: Edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId));
+    syncSelectedNodeDraft(null, []);
+    toast.success("Node removido do quadro. Salve para persistir.");
+  };
 
-    setNodes((nds) =>
-      nds.map((node) => {
-        if (node.id === selectedNodeId) {
-          const colorDef = colors.find(c => c.name === nodeColorInput) || colors[0];
-          return {
-            ...node,
-            data: {
-              ...node.data,
-              label: nodeTitleInput || nodeBodyInput || "Nota",
-              title: nodeTitleInput,
-              body: nodeBodyInput,
-              color: nodeColorInput
-            },
-            style: {
-              ...node.style,
-              background: colorDef.bg,
-              color: colorDef.text,
-              border: `1px solid ${colorDef.border}`
+  const handleApplySelectedNodeChanges = async () => {
+    if (!selectedNode) return;
+    const color = getColorDefinition(nodeDraft.color);
+    setNodes((current: Node<WorkshopNodeData>[]) =>
+      current.map((node: Node<WorkshopNodeData>) =>
+        node.id === selectedNode.id
+          ? {
+              ...node,
+              data: {
+                ...node.data,
+                itemType: nodeDraft.itemType,
+                title: nodeDraft.title,
+                body: nodeDraft.body,
+                url: nodeDraft.url,
+                color: color.name,
+              },
+              style: {
+                ...node.style,
+                ...getNodeDimensions(nodeDraft.itemType),
+              },
             }
-          };
-        }
-        return node;
-      })
+          : node
+      )
     );
-    toast.success("Elemento do quadro atualizado localmente!");
-  };
 
-  const handleDeleteNodeFromBoard = () => {
-    if (!selectedNodeId) return;
-    setNodes((nds) => nds.filter((node) => node.id !== selectedNodeId));
-    setEdges((eds) => eds.filter((edge) => edge.source !== selectedNodeId && edge.target !== selectedNodeId));
-    setSelectedNodeId(null);
-    toast.success("Elemento removido do quadro!");
+    if (selectedNode.data.itemId) {
+      try {
+        const updated = await updateVideoProjectItem(selectedNode.data.itemId, {
+          item_type: nodeDraft.itemType,
+          title: nodeDraft.title || null,
+          body: nodeDraft.body || null,
+          url: nodeDraft.url || null,
+          metadata_json: { color: color.name },
+        });
+        setItems((current) => current.map((item) => (item.id === updated.id ? updated : item)));
+      } catch (error: any) {
+        toast.error(error.message || "Erro ao sincronizar elemento da biblioteca.");
+        return;
+      }
+    }
+
+    toast.success("Node atualizado.");
   };
 
   const handleSaveBoard = async () => {
     try {
       setSavingBoard(true);
-      const boardNodes: VideoProjectBoardNode[] = nodes.map(n => ({
-        node_key: n.id,
-        node_type: "note",
-        title: n.data.title || null,
-        body: n.data.body || null,
-        x: n.position.x,
-        y: n.position.y,
-        width: Number(n.style?.width) || 160,
-        height: Number(n.style?.height) || 80,
-        color: n.data.color || "Gray"
-      }));
+      const payload = {
+        nodes: nodes.map((node: Node<WorkshopNodeData>) => ({
+          item_id: node.data.itemId || null,
+          node_key: node.id,
+          node_type: node.data.itemType,
+          title: node.data.title || null,
+          body: node.data.body || null,
+          x: node.position.x,
+          y: node.position.y,
+          width: Number(node.style?.width) || getNodeDimensions(node.data.itemType).width,
+          height: Number(node.style?.height) || getNodeDimensions(node.data.itemType).height,
+          color: node.data.color,
+          data_json: {
+            url: node.data.url || null,
+            status: node.data.status || "open",
+            pinned: node.data.pinned || false,
+          },
+        })),
+        edges: edges.map((edge: Edge) => ({
+          edge_key: edge.id,
+          source_node_key: edge.source,
+          target_node_key: edge.target,
+          label: typeof edge.label === "string" ? edge.label : null,
+          data_json: null,
+        })),
+      };
 
-      const boardEdges: VideoProjectBoardEdge[] = edges.map(e => ({
-        edge_key: e.id,
-        source_node_key: e.source,
-        target_node_key: e.target,
-        label: typeof e.label === "string" ? e.label : null
-      }));
-
-      await saveVideoProjectBoard(projectId, {
-        nodes: boardNodes,
-        edges: boardEdges
-      });
-
-      toast.success("Estrutura do quadro salva com sucesso!");
-    } catch (err: any) {
-      toast.error("Erro ao salvar quadro criativo.");
+      const saved = await saveVideoProjectBoard(projectId, payload);
+      const { mappedNodes, mappedEdges } = mapBoardToReactFlow(saved.nodes, saved.edges);
+      setNodes(mappedNodes);
+      setEdges(mappedEdges);
+      syncSelectedNodeDraft(selectedNodeId, mappedNodes);
+      toast.success("Quadro salvo.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao salvar quadro.");
     } finally {
       setSavingBoard(false);
     }
   };
 
+  const importPanelItems = filteredItems.filter((item) => !nodes.some((node: Node<WorkshopNodeData>) => node.data.itemId === item.id));
 
-  if (loading && !project) {
+  if (loading || !project) {
     return (
-      <div className="flex h-[80vh] flex-col items-center justify-center gap-3">
-        <Loader2 className="h-9 w-9 animate-spin text-indigo-500" />
-        <span className="text-sm text-slate-400 font-medium">Carregando painel criativo...</span>
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className="rounded-xl border border-rose-950 bg-rose-950/20 p-5 text-rose-250 flex items-center gap-3">
-        <AlertCircle className="h-5 w-5 text-rose-450 shrink-0" />
-        <span className="text-sm">Projeto de vídeo não encontrado.</span>
+      <div className="flex min-h-[70vh] items-center justify-center">
+        <div className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-950/70 px-5 py-4 text-sm text-slate-300">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Carregando oficina...
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Back & Actions Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-850 pb-5">
-        <div className="flex items-center gap-3">
-          <Link
-            href="/scripts"
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-800 bg-[#0b101c] hover:bg-slate-900 text-slate-400 hover:text-slate-205 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Link>
-          <div>
-            <h2 className="text-2xl font-bold tracking-tight text-white font-sans flex items-center gap-2">
-              {project.title}
-              <span className={cn("inline-flex items-center rounded px-2 py-0.5 text-[9px] font-bold border tracking-wider uppercase", statusConfig[project.status]?.class)}>
-                {statusConfig[project.status]?.label}
-              </span>
-            </h2>
-            <div className="flex items-center gap-2 mt-0.5 text-xs text-slate-450">
-              {project.niche && <span>Nicho: <strong className="text-slate-300">{project.niche}</strong></span>}
-              {project.niche && <span>•</span>}
-              <span>Prioridade: <strong className="text-slate-300">P{project.priority}</strong></span>
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_30%),radial-gradient(circle_at_right,_rgba(99,102,241,0.12),_transparent_28%),#020617] text-slate-100">
+      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-2xl shadow-slate-950/30 backdrop-blur">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="space-y-3">
+              <Link
+                href="/scripts"
+                className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                Voltar para scripts
+              </Link>
+              <div className="space-y-2">
+                <input
+                  value={project.title}
+                  onChange={(event) => setProject({ ...project, title: event.target.value })}
+                  onBlur={() => handleUpdateProjectMeta({ title: project.title })}
+                  className="w-full bg-transparent text-3xl font-semibold tracking-tight text-white outline-none"
+                />
+                <textarea
+                  value={project.description || ""}
+                  onChange={(event) => setProject({ ...project, description: event.target.value })}
+                  onBlur={() => handleUpdateProjectMeta({ description: project.description || null })}
+                  rows={2}
+                  className="w-full resize-none rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 text-sm text-slate-300 outline-none transition-colors focus:border-sky-500/40"
+                  placeholder="Resumo da proposta, angulo do video e objetivo da oficina."
+                />
+              </div>
+            </div>
+
+            <div className="grid min-w-[290px] gap-3 sm:grid-cols-2">
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Status
+                </div>
+                <select
+                  value={project.status}
+                  onChange={(event) => {
+                    const nextStatus = event.target.value as VideoProject["status"];
+                    setProject({ ...project, status: nextStatus });
+                    handleUpdateProjectMeta({ status: nextStatus });
+                  }}
+                  className="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/40"
+                >
+                  {Object.entries(statusConfig).map(([value, config]) => (
+                    <option key={value} value={value}>
+                      {config.label}
+                    </option>
+                  ))}
+                </select>
+                <div className={cn("mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold", statusConfig[project.status].className)}>
+                  {statusConfig[project.status].label}
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                  Oficina
+                </div>
+                <div className="space-y-2 text-sm text-slate-300">
+                  <div>{items.length} elementos</div>
+                  <div>{nodes.length} cards no quadro</div>
+                  <div>{scriptWordCount} palavras no roteiro</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/80 pt-4">
+            {([
+              { id: "roteiro", label: "Roteiro", icon: BookOpen },
+              { id: "quadro", label: "Quadro", icon: Sparkles },
+              { id: "elementos", label: "Biblioteca", icon: FolderKanban },
+            ] as const).map((tab) => {
+              const Icon = tab.icon;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition-all",
+                    activeTab === tab.id
+                      ? "border-sky-500/40 bg-sky-500/15 text-sky-100"
+                      : "border-slate-800 bg-slate-900/70 text-slate-400 hover:border-slate-700 hover:text-slate-200"
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {tab.label}
+                </button>
+              );
+            })}
+
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleArchiveProject}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
+              >
+                <Archive className="h-4 w-4" />
+                Arquivar
+              </button>
+              <button
+                onClick={handleDeleteProject}
+                className="inline-flex items-center gap-2 rounded-full border border-rose-900/60 bg-rose-950/20 px-4 py-2 text-sm text-rose-300 transition-colors hover:bg-rose-950/35"
+              >
+                <Trash2 className="h-4 w-4" />
+                Excluir
+              </button>
             </div>
           </div>
         </div>
 
-        {/* Action button controls */}
-        <div className="flex items-center gap-2">
-          {/* Status select dropdown */}
-          <select
-            value={project.status}
-            onChange={(e) => handleUpdateMeta({ status: e.target.value as any })}
-            className="rounded-lg border border-slate-800 bg-slate-950 px-3 h-10 text-xs font-bold text-slate-300 outline-none focus:border-indigo-500 transition-all cursor-pointer"
-          >
-            <option value="idea">Mudar para: Ideia</option>
-            <option value="researching">Mudar para: Pesquisando</option>
-            <option value="scripting">Mudar para: Roteirizando</option>
-            <option value="reviewing">Mudar para: Revisando</option>
-            <option value="ready">Mudar para: Pronto</option>
-            <option value="produced">Mudar para: Produzido</option>
-          </select>
-
-          {/* Archive Project */}
-          <button
-            onClick={handleArchive}
-            className="flex h-10 px-3.5 items-center gap-2 rounded-lg border border-slate-800 bg-[#0b101c] hover:bg-slate-900 text-slate-400 hover:text-indigo-400 hover:border-indigo-950/20 transition-all font-semibold text-xs"
-            title="Arquivar Projeto"
-          >
-            <Archive className="h-4 w-4" />
-            <span className="hidden sm:inline">Arquivar</span>
-          </button>
-
-          {/* Delete Project */}
-          <button
-            onClick={handleDeleteProject}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-rose-950 bg-rose-950/5 hover:bg-rose-900 text-rose-450 hover:text-white transition-colors"
-            title="Excluir Projeto"
-          >
-            <Trash2 className="h-4 w-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Tabs list navigation */}
-      <div className="flex border-b border-slate-850 gap-1.5 overflow-x-auto select-none">
-        {(["roteiro", "quadro", "notas", "referencias", "musica"] as const).map((tab) => (
-          <button
-            key={tab}
-            onClick={() => setActiveTab(tab)}
-            className={cn(
-              "px-4 py-2 text-xs font-bold border-b-2 capitalize transition-all shrink-0",
-              activeTab === tab
-                ? "border-indigo-500 text-white"
-                : "border-transparent text-slate-500 hover:text-slate-300 hover:border-slate-800"
-            )}
-          >
-            {tab}
-          </button>
-        ))}
-      </div>
-
-      {/* Tab Panels */}
-      <div className="mt-4">
-        {/* TAB 1: ROTEIRO (SCRIPT) */}
-        {activeTab === "roteiro" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-3 space-y-4">
-              {/* Rich text Editor container */}
-              <div className="rounded-xl border border-slate-800 bg-[#0b101c]/15 overflow-hidden flex flex-col min-h-[500px]">
-                {/* Formatting Toolbar */}
-                {editor && (
-                  <div className="border-b border-slate-800 bg-slate-950/80 px-4 py-2.5 flex flex-wrap gap-1 items-center select-none">
-                    <button
-                      onClick={() => editor.chain().focus().toggleBold().run()}
-                      className={cn("p-1.5 rounded hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-205", editor.isActive("bold") && "bg-slate-800 text-white")}
-                      title="Negrito"
-                    >
-                      <Bold className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleItalic().run()}
-                      className={cn("p-1.5 rounded hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-205", editor.isActive("italic") && "bg-slate-800 text-white")}
-                      title="Itálico"
-                    >
-                      <Italic className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()}
-                      className={cn("p-1.5 rounded hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-205", editor.isActive("heading", { level: 1 }) && "bg-slate-800 text-white")}
-                      title="Título 1"
-                    >
-                      <Heading1 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()}
-                      className={cn("p-1.5 rounded hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-205", editor.isActive("heading", { level: 2 }) && "bg-slate-800 text-white")}
-                      title="Título 2"
-                    >
-                      <Heading2 className="h-4 w-4" />
-                    </button>
-                    <button
-                      onClick={() => editor.chain().focus().toggleBulletList().run()}
-                      className={cn("p-1.5 rounded hover:bg-slate-900 transition-colors text-slate-400 hover:text-slate-205", editor.isActive("bulletList") && "bg-slate-800 text-white")}
-                      title="Lista de marcadores"
-                    >
-                      <List className="h-4 w-4" />
-                    </button>
+        {activeTab === "roteiro" ? (
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-white">Editor de roteiro</div>
+                  <div className="text-xs text-slate-500">
+                    Selecione um trecho para criar um card de roteiro direto no quadro.
                   </div>
-                )}
-                
-                {/* Editor Content Area */}
-                <div className="flex-1 p-5 prose prose-invert max-w-none text-slate-200 focus:outline-none min-h-[400px]">
-                  <EditorContent editor={editor} className="outline-none" />
+                </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    onClick={handleSendScriptExcerptToBoard}
+                    className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-200 transition-colors hover:bg-sky-500/15"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    Enviar trecho para o quadro
+                  </button>
+                  <button
+                    onClick={handleSaveScript}
+                    disabled={savingScript}
+                    className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                  >
+                    {savingScript ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                    Salvar roteiro
+                  </button>
                 </div>
               </div>
-
-              {/* Word Count Display & Actions */}
-              <div className="flex items-center justify-between bg-slate-950/20 p-4 rounded-xl border border-slate-850">
-                <div className="flex items-center gap-4 text-xs font-semibold text-slate-500">
-                  <span className="flex items-center gap-1">
-                    <BookOpen className="h-4 w-4 text-slate-600" />
-                    {scriptWordCount} palavras
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Clock className="h-4 w-4 text-slate-600" />
-                    Leitura: ~{scriptDuration}s (150ppm)
-                  </span>
-                </div>
-
-                <button
-                  onClick={handleSaveScript}
-                  disabled={savingScript}
-                  className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition-all select-none disabled:opacity-40"
-                >
-                  {savingScript ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Salvando Roteiro...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-3.5 w-3.5" />
-                      <span>Salvar Roteiro</span>
-                    </>
-                  )}
-                </button>
+              <div className="min-h-[580px] rounded-3xl border border-slate-800 bg-slate-950/80 p-4">
+                <EditorContent editor={editor} className="prose prose-invert max-w-none [&_.ProseMirror]:min-h-[520px] [&_.ProseMirror]:outline-none" />
               </div>
             </div>
 
-            {/* Script Sidebar metadata form */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider select-none">Propriedades do Roteiro</h3>
-              
-              {/* Working Title */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Título de Trabalho</span>
-                <input
-                  type="text"
-                  value={project.working_title || ""}
-                  onChange={(e) => setProject({ ...project, working_title: e.target.value })}
-                  onBlur={() => handleUpdateMeta({ working_title: project.working_title })}
-                  className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  placeholder="Ex: Roteiro v1 - Rust"
-                />
+            <div className="space-y-4">
+              <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Metricas</div>
+                <div className="mt-4 grid gap-3">
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                    <div className="text-2xl font-semibold text-white">{scriptWordCount}</div>
+                    <div className="text-xs text-slate-500">Palavras</div>
+                  </div>
+                  <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                    <div className="text-2xl font-semibold text-white">{scriptDuration}s</div>
+                    <div className="text-xs text-slate-500">Duracao estimada</div>
+                  </div>
+                </div>
               </div>
 
-              {/* Niche Theme */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Nicho / Assunto</span>
-                <input
-                  type="text"
-                  value={project.niche || ""}
-                  onChange={(e) => setProject({ ...project, niche: e.target.value })}
-                  onBlur={() => handleUpdateMeta({ niche: project.niche })}
-                  className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  placeholder="Ex: Finanças"
-                />
-              </div>
-
-              {/* Target Duration */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Duração Alvo (segundos)</span>
-                <input
-                  type="number"
-                  value={project.target_duration_seconds || ""}
-                  onChange={(e) => setProject({ ...project, target_duration_seconds: Number(e.target.value) })}
-                  onBlur={() => handleUpdateMeta({ target_duration_seconds: project.target_duration_seconds })}
-                  className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-mono font-bold"
-                  placeholder="Ex: 600"
-                />
-              </div>
-
-              {/* Platform */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plataforma</span>
-                <input
-                  type="text"
-                  value={project.target_platform || ""}
-                  onChange={(e) => setProject({ ...project, target_platform: e.target.value })}
-                  onBlur={() => handleUpdateMeta({ target_platform: project.target_platform })}
-                  className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  placeholder="Ex: Instagram"
-                />
-              </div>
-
-              {/* Format */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Formato do Vídeo</span>
-                <input
-                  type="text"
-                  value={project.video_format || ""}
-                  onChange={(e) => setProject({ ...project, video_format: e.target.value })}
-                  onBlur={() => handleUpdateMeta({ video_format: project.video_format })}
-                  className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  placeholder="Ex: Shorts (Vertical)"
-                />
+              <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Atalhos da oficina</div>
+                <div className="mt-4 space-y-3 text-sm text-slate-300">
+                  <p>Use a biblioteca para criar referencias, musicas, tarefas e thumbnails como elementos unificados.</p>
+                  <p>Use o quadro para conectar cards e organizar a narrativa visualmente.</p>
+                </div>
               </div>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* TAB 2: QUADRO CRIATIVO (CANVAS BOARD) */}
-        {activeTab === "quadro" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            <div className="lg:col-span-3 space-y-4">
-              <div className="h-[550px] w-full border border-slate-800 rounded-xl bg-slate-950/40 relative overflow-hidden">
-                <ReactFlow
-                  nodes={nodes}
-                  edges={edges}
-                  onNodesChange={onNodesChange}
-                  onEdgesChange={onEdgesChange}
-                  onConnect={onConnect}
-                  onNodeClick={handleNodeClick}
-                  fitView
-                >
-                  <Background color="#334155" gap={16} />
-                  <Controls className="bg-slate-900 border-slate-800 text-white fill-current fill-white rounded shadow-lg overflow-hidden [&>button]:border-slate-800" />
-                </ReactFlow>
-              </div>
+        {activeTab === "quadro" ? (
+          <div className="rounded-[32px] border border-slate-800/80 bg-slate-950/60 p-4 shadow-2xl shadow-slate-950/30">
+            <div className="relative h-[78vh] overflow-hidden rounded-[28px] border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.12),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(99,102,241,0.14),_transparent_25%),#030712]">
+              <ReactFlow
+                nodeTypes={nodeTypes}
+                nodes={nodes}
+                edges={edges}
+                onInit={setFlowInstance}
+                onNodesChange={onNodesChange}
+                onEdgesChange={onEdgesChange}
+                onConnect={onConnect}
+                onNodeClick={handleSelectNode}
+                onPaneClick={() => syncSelectedNodeDraft(null, nodes)}
+                fitView
+              >
+                <Background color="#1f2937" gap={20} size={1.2} />
 
-              {/* Board controls */}
-              <div className="flex items-center justify-between bg-slate-950/20 p-4 rounded-xl border border-slate-850">
-                <button
-                  onClick={handleAddBoardNode}
-                  className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-[#0b101c] hover:bg-slate-900 px-4 py-2 text-xs font-bold text-indigo-400 transition-colors"
-                >
-                  <Plus className="h-4 w-4" />
-                  <span>Adicionar Nota</span>
-                </button>
-
-                <button
-                  onClick={handleSaveBoard}
-                  disabled={savingBoard}
-                  className="flex items-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white shadow hover:bg-indigo-500 transition-all select-none disabled:opacity-40"
-                >
-                  {savingBoard ? (
-                    <>
-                      <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                      <span>Salvando Quadro...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Save className="h-3.5 w-3.5" />
-                      <span>Salvar Quadro</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Visual Board node properties editor panel */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 shadow-sm space-y-4">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider select-none">Propriedades do Elemento</h3>
-              {selectedNodeId ? (
-                <div className="space-y-4">
-                  {/* Title */}
-                  <div className="space-y-1">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Título da Nota</span>
-                    <input
-                      type="text"
-                      value={nodeTitleInput}
-                      onChange={(e) => setNodeTitleInput(e.target.value)}
-                      className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-semibold"
-                    />
+                <Panel position="top-left">
+                  <div className="flex items-center gap-2 rounded-2xl border border-slate-800/90 bg-slate-950/90 p-2 shadow-xl backdrop-blur">
+                    <button
+                      onClick={handleSaveBoard}
+                      disabled={savingBoard}
+                      className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                    >
+                      {savingBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                      Salvar
+                    </button>
+                    <button
+                      onClick={() => flowInstance?.fitView({ padding: 0.2 })}
+                      className="rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-800"
+                    >
+                      Fit view
+                    </button>
+                    <button
+                      onClick={() => flowInstance?.zoomIn()}
+                      className="rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-200 transition-colors hover:bg-slate-800"
+                    >
+                      <ZoomIn className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => flowInstance?.zoomOut()}
+                      className="rounded-xl border border-slate-700 bg-slate-900 p-2 text-slate-200 transition-colors hover:bg-slate-800"
+                    >
+                      <ZoomOut className="h-4 w-4" />
+                    </button>
+                    <button
+                      onClick={() => setShowImportPanel((current) => !current)}
+                      className="rounded-xl border border-sky-500/30 bg-sky-500/10 px-3 py-2 text-sm text-sky-100 transition-colors hover:bg-sky-500/15"
+                    >
+                      Importar elemento
+                    </button>
                   </div>
+                </Panel>
 
-                  {/* Body */}
-                  <div className="space-y-1">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Conteúdo</span>
-                    <textarea
-                      value={nodeBodyInput}
-                      onChange={(e) => setNodeBodyInput(e.target.value)}
-                      rows={4}
-                      className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium resize-none"
-                    />
-                  </div>
-
-                  {/* Color Selector */}
-                  <div className="space-y-1.5">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cor do Card</span>
-                    <div className="grid grid-cols-4 gap-1.5">
-                      {colors.map((c) => (
+                <Panel position="top-right">
+                  {selectedNode ? (
+                    <div className="w-[320px] rounded-3xl border border-slate-800/90 bg-slate-950/95 p-4 shadow-2xl backdrop-blur">
+                      <div className="mb-3 flex items-center justify-between gap-3">
+                        <div>
+                          <div className="text-sm font-semibold text-white">Ferramentas do card</div>
+                          <div className="text-xs text-slate-500">Edite o elemento dentro do quadro.</div>
+                        </div>
                         <button
-                          key={c.name}
-                          type="button"
-                          onClick={() => setNodeColorInput(c.name)}
-                          style={{ background: c.bg, borderColor: c.border, color: c.text }}
+                          onClick={() => syncSelectedNodeDraft(null, nodes)}
+                          className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+                        >
+                          Fechar
+                        </button>
+                      </div>
+
+                      <div className="space-y-3">
+                        <input
+                          value={nodeDraft.title}
+                          onChange={(event) => setNodeDraft((current) => ({ ...current, title: event.target.value }))}
+                          className="w-full rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          placeholder="Titulo"
+                        />
+                        <textarea
+                          value={nodeDraft.body}
+                          onChange={(event) => setNodeDraft((current) => ({ ...current, body: event.target.value }))}
+                          rows={4}
+                          className="w-full rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          placeholder="Texto do card"
+                        />
+                        <input
+                          value={nodeDraft.url}
+                          onChange={(event) => setNodeDraft((current) => ({ ...current, url: event.target.value }))}
+                          className="w-full rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          placeholder="URL opcional"
+                        />
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <select
+                            value={nodeDraft.itemType}
+                            onChange={(event) => setNodeDraft((current) => ({ ...current, itemType: event.target.value as VideoProjectItemType }))}
+                            className="rounded-2xl border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          >
+                            {Object.entries(itemTypeMeta).map(([value, meta]) => (
+                              <option key={value} value={value}>
+                                {meta.label}
+                              </option>
+                            ))}
+                          </select>
+                          <div className="flex flex-wrap gap-2">
+                            {colorOptions.map((color) => (
+                              <button
+                                key={color.name}
+                                onClick={() => setNodeDraft((current) => ({ ...current, color: color.name }))}
+                                style={{ background: color.bg, borderColor: color.border, color: color.text }}
+                                className={cn(
+                                  "rounded-xl border px-2.5 py-2 text-[11px] font-semibold transition-transform",
+                                  nodeDraft.color === color.name ? "scale-105" : "opacity-80"
+                                )}
+                              >
+                                {color.name}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-800 pt-4">
+                        <button
+                          onClick={handleApplySelectedNodeChanges}
+                          className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
+                        >
+                          Aplicar
+                        </button>
+                        <button
+                          onClick={handleDuplicateSelectedNode}
+                          className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900 px-4 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-800"
+                        >
+                          <Copy className="h-4 w-4" />
+                          Duplicar
+                        </button>
+                        <button
+                          onClick={handleDeleteSelectedNode}
+                          className="inline-flex items-center gap-2 rounded-full border border-rose-900/70 bg-rose-950/20 px-4 py-2 text-sm text-rose-200 transition-colors hover:bg-rose-950/35"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                          Deletar
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
+                </Panel>
+
+                <Panel position="bottom-left">
+                  <div className="flex flex-col gap-2 rounded-3xl border border-slate-800/90 bg-slate-950/92 p-2 shadow-xl backdrop-blur">
+                    {quickCanvasTypes.map((itemType) => {
+                      const meta = itemTypeMeta[itemType];
+                      const Icon = meta.icon;
+                      return (
+                        <button
+                          key={itemType}
+                          onClick={() => handleCreateQuickCanvasItem(itemType)}
+                          className="flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:border-slate-700 hover:bg-slate-800/90"
+                        >
+                          {creatingQuickItem === itemType ? (
+                            <Loader2 className="h-4 w-4 animate-spin text-sky-300" />
+                          ) : (
+                            <Icon className="h-4 w-4 text-sky-300" />
+                          )}
+                          <span>{meta.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </Panel>
+
+                {showImportPanel ? (
+                  <Panel position="bottom-right">
+                    <div className="w-[360px] rounded-3xl border border-slate-800/90 bg-slate-950/95 p-4 shadow-2xl backdrop-blur">
+                      <div className="mb-3 flex items-center justify-between">
+                        <div>
+                          <div className="text-sm font-semibold text-white">Importar elementos</div>
+                          <div className="text-xs text-slate-500">Biblioteca da oficina dentro do quadro.</div>
+                        </div>
+                        <button
+                          onClick={() => setShowImportPanel(false)}
+                          className="rounded-full border border-slate-700 px-2 py-1 text-xs text-slate-400 hover:text-slate-200"
+                        >
+                          Fechar
+                        </button>
+                      </div>
+
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        <button
+                          onClick={() => setLibraryFilter("all")}
                           className={cn(
-                            "h-6 rounded border text-[9px] font-bold transition-all truncate px-0.5",
-                            nodeColorInput === c.name ? "ring-2 ring-indigo-500 scale-105" : "opacity-80"
+                            "rounded-full border px-3 py-1.5 text-xs font-medium",
+                            libraryFilter === "all"
+                              ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                              : "border-slate-800 bg-slate-900 text-slate-400"
                           )}
                         >
-                          {c.name}
+                          Todos
                         </button>
-                      ))}
-                    </div>
-                  </div>
+                        {quickCanvasTypes.map((itemType) => (
+                          <button
+                            key={itemType}
+                            onClick={() => setLibraryFilter(itemType)}
+                            className={cn(
+                              "rounded-full border px-3 py-1.5 text-xs font-medium",
+                              libraryFilter === itemType
+                                ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                                : "border-slate-800 bg-slate-900 text-slate-400"
+                            )}
+                          >
+                            {itemTypeMeta[itemType].label}
+                          </button>
+                        ))}
+                      </div>
 
-                  {/* Action buttons */}
-                  <div className="flex items-center gap-2 pt-2 border-t border-slate-800/60">
-                    <button
-                      onClick={handleUpdateNodeProperties}
-                      className="flex-1 flex items-center justify-center gap-1 rounded bg-indigo-600/15 hover:bg-indigo-600/25 border border-indigo-500/20 text-indigo-400 py-1.5 text-xs font-bold transition-colors"
-                    >
-                      Atualizar
-                    </button>
-                    <button
-                      onClick={handleDeleteNodeFromBoard}
-                      className="h-8 w-8 flex items-center justify-center rounded bg-rose-950/15 hover:bg-rose-950/25 border border-rose-900/20 text-rose-400 transition-colors"
-                      title="Deletar nó"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center text-xs text-slate-500 py-12">
-                  Selecione um card no quadro para editar suas propriedades.
-                </div>
-              )}
+                      <button
+                        onClick={handleSendScriptExcerptToBoard}
+                        className="mb-4 w-full rounded-2xl border border-indigo-500/30 bg-indigo-500/10 px-4 py-2 text-sm font-medium text-indigo-100 transition-colors hover:bg-indigo-500/15"
+                      >
+                        Importar trecho selecionado do roteiro
+                      </button>
+
+                      <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+                        {importPanelItems.length === 0 ? (
+                          <div className="rounded-2xl border border-dashed border-slate-800 px-4 py-8 text-center text-sm text-slate-500">
+                            Nenhum elemento disponivel para importar neste filtro.
+                          </div>
+                        ) : (
+                          importPanelItems.map((item) => (
+                            <div
+                              key={item.id}
+                              className="rounded-2xl border border-slate-800 bg-slate-900/80 p-3"
+                            >
+                              <div className="mb-2 flex items-center justify-between gap-3">
+                                <div>
+                                  <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                                    {itemTypeMeta[item.item_type].label}
+                                  </div>
+                                  <div className="text-sm font-semibold text-slate-100">
+                                    {item.title || "Sem titulo"}
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => handleAddItemToBoard(item)}
+                                  className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/15"
+                                >
+                                  <Plus className="h-3.5 w-3.5" />
+                                  Adicionar ao quadro
+                                </button>
+                              </div>
+                              {item.body ? (
+                                <p className="line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-slate-400">
+                                  {item.body}
+                                </p>
+                              ) : null}
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                  </Panel>
+                ) : null}
+              </ReactFlow>
             </div>
           </div>
-        )}
+        ) : null}
 
-        {/* TAB 3: NOTAS AVULSAS (LOOSE NOTES) */}
-        {activeTab === "notas" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Create note sidebar form */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 shadow-sm self-start">
-              <h3 className="text-sm font-bold text-white mb-4 uppercase tracking-wider select-none">Adicionar Nota</h3>
-              <form onSubmit={handleCreateNote} className="space-y-4">
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Título</span>
-                  <input
-                    type="text"
-                    placeholder="Título da nota (opcional)"
-                    value={newNoteTitle}
-                    onChange={(e) => setNewNoteTitle(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-semibold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tipo da Nota</span>
+        {activeTab === "elementos" ? (
+          <div className="grid gap-6 lg:grid-cols-[330px_minmax(0,1fr)]">
+            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
+              <div className="mb-4">
+                <div className="text-sm font-semibold text-white">Novo elemento</div>
+                <div className="text-xs text-slate-500">Notas, referencias, musicas, tarefas e imagens entram pela mesma biblioteca.</div>
+              </div>
+              <form onSubmit={handleCreateLibraryItem} className="space-y-3">
+                <select
+                  value={libraryForm.item_type}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                >
+                  {Object.entries(itemTypeMeta).map(([value, meta]) => (
+                    <option key={value} value={value}>
+                      {meta.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={libraryForm.title}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, title: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                  placeholder="Titulo"
+                />
+                <input
+                  value={libraryForm.url}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, url: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                  placeholder="URL opcional"
+                />
+                <textarea
+                  value={libraryForm.body}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, body: event.target.value }))}
+                  rows={5}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                  placeholder="Observacoes, nota de uso, comentario ou contexto."
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
                   <select
-                    value={newNoteType}
-                    onChange={(e) => setNewNoteType(e.target.value as any)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-350 outline-none focus:border-indigo-500 font-semibold"
+                    value={libraryForm.status}
+                    onChange={(event) => setLibraryForm((current) => ({ ...current, status: event.target.value }))}
+                    className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
                   >
-                    <option value="idea">Ideia</option>
-                    <option value="research">Pesquisa</option>
-                    <option value="script_note">Nota do Roteiro</option>
-                    <option value="production_note">Produção</option>
-                    <option value="music_idea">Ideia Musical</option>
-                    <option value="thumbnail_idea">Capa / Thumbnail</option>
-                    <option value="todo">Tarefa (To Do)</option>
-                    <option value="other">Outro</option>
+                    <option value="open">Open</option>
+                    <option value="done">Done</option>
+                    <option value="archived">Archived</option>
                   </select>
+                  <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={libraryForm.pinned}
+                      onChange={(event) => setLibraryForm((current) => ({ ...current, pinned: event.target.checked }))}
+                      className="rounded border-slate-700 bg-slate-950"
+                    />
+                    Fixado
+                  </label>
                 </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Conteúdo *</span>
-                  <textarea
-                    placeholder="Escreva sua nota aqui..."
-                    value={newNoteBody}
-                    onChange={(e) => setNewNoteBody(e.target.value)}
-                    rows={4}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium resize-none"
-                    required
-                  />
-                </div>
-
                 <button
                   type="submit"
-                  disabled={!newNoteBody.trim()}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 transition-all select-none disabled:opacity-40"
+                  className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
                 >
                   <Plus className="h-4 w-4" />
-                  <span>Adicionar</span>
+                  Criar elemento
                 </button>
               </form>
             </div>
 
-            {/* Note Board Display List */}
-            <div className="lg:col-span-3 space-y-4">
-              {/* Type Filters Bar */}
-              <div className="flex flex-wrap gap-1.5 border-b border-slate-850/60 pb-3 select-none">
-                {[
-                  { value: "all", label: "Todas" },
-                  { value: "idea", label: "Ideias" },
-                  { value: "research", label: "Pesquisa" },
-                  { value: "script_note", label: "Nota Roteiro" },
-                  { value: "production_note", label: "Produção" },
-                  { value: "thumbnail_idea", label: "Thumbnails" },
-                  { value: "todo", label: "Tarefas" }
-                ].map((f) => (
+            <div className="space-y-4">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setLibraryFilter("all")}
+                  className={cn(
+                    "rounded-full border px-3 py-2 text-sm font-medium",
+                    libraryFilter === "all"
+                      ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                      : "border-slate-800 bg-slate-900/70 text-slate-400"
+                  )}
+                >
+                  Todos
+                </button>
+                {Object.entries(itemTypeMeta).map(([value, meta]) => (
                   <button
-                    key={f.value}
-                    onClick={() => setNoteFilter(f.value)}
+                    key={value}
+                    onClick={() => setLibraryFilter(value as VideoProjectItemType)}
                     className={cn(
-                      "px-3 py-1 rounded text-[10px] font-bold uppercase border tracking-wider transition-colors",
-                      noteFilter === f.value
-                        ? "bg-indigo-650/15 border-indigo-500/25 text-indigo-400"
-                        : "bg-slate-950/20 border-slate-850 text-slate-500 hover:text-slate-300"
+                      "rounded-full border px-3 py-2 text-sm font-medium",
+                      libraryFilter === value
+                        ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
+                        : "border-slate-800 bg-slate-900/70 text-slate-400"
                     )}
                   >
-                    {f.label}
+                    {meta.label}
                   </button>
                 ))}
               </div>
 
-              {/* Note card grid layout */}
-              {filteredNotes.length === 0 ? (
-                <div className="text-center text-xs text-slate-500 py-16 border border-dashed border-slate-800 rounded-xl bg-slate-950/10">
-                  Nenhuma nota salva para este filtro. Escreva uma no painel ao lado!
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {filteredNotes.map((note) => (
+              <div className="grid gap-4 xl:grid-cols-2">
+                {filteredItems.map((item) => {
+                  const meta = itemTypeMeta[item.item_type];
+                  const Icon = meta.icon;
+                  const isEditing = editingItemId === item.id;
+                  return (
                     <div
-                      key={note.id}
-                      className={cn(
-                        "relative flex flex-col justify-between rounded-xl border p-4 backdrop-blur-sm transition-all shadow-md group",
-                        note.pinned ? "border-indigo-500/40 bg-indigo-950/5" : "border-slate-800 bg-[#0b101c]/15"
-                      )}
+                      key={item.id}
+                      className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-lg shadow-slate-950/20"
                     >
-                      {editingNoteId === note.id ? (
-                        /* Inline edit mode */
+                      <div className="mb-3 flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3">
+                          <span className="rounded-2xl border border-slate-800 bg-slate-900/80 p-2 text-sky-300">
+                            <Icon className="h-4 w-4" />
+                          </span>
+                          <div>
+                            <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
+                              {meta.label}
+                            </div>
+                            <div className="text-sm font-semibold text-white">
+                              {item.title || "Sem titulo"}
+                            </div>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={() => handleAddItemToBoard(item)}
+                            className="rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-xs font-semibold text-sky-100 hover:bg-sky-500/15"
+                          >
+                            Adicionar ao quadro
+                          </button>
+                          <button
+                            onClick={() => handleDeleteItem(item.id)}
+                            className="rounded-full border border-rose-900/70 bg-rose-950/20 p-2 text-rose-200 hover:bg-rose-950/35"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {isEditing ? (
                         <div className="space-y-3">
+                          <select
+                            value={editingItemDraft.item_type}
+                            onChange={(event) => setEditingItemDraft((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          >
+                            {Object.entries(itemTypeMeta).map(([value, metaOption]) => (
+                              <option key={value} value={value}>
+                                {metaOption.label}
+                              </option>
+                            ))}
+                          </select>
                           <input
-                            type="text"
-                            value={editNoteTitle}
-                            onChange={(e) => setEditNoteTitle(e.target.value)}
-                            placeholder="Título (opcional)"
-                            className="w-full rounded bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 font-semibold"
+                            value={editingItemDraft.title}
+                            onChange={(event) => setEditingItemDraft((current) => ({ ...current, title: event.target.value }))}
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                          />
+                          <input
+                            value={editingItemDraft.url}
+                            onChange={(event) => setEditingItemDraft((current) => ({ ...current, url: event.target.value }))}
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                            placeholder="URL"
                           />
                           <textarea
-                            value={editNoteBody}
-                            onChange={(e) => setEditNoteBody(e.target.value)}
+                            value={editingItemDraft.body}
+                            onChange={(event) => setEditingItemDraft((current) => ({ ...current, body: event.target.value }))}
                             rows={4}
-                            className="w-full rounded bg-slate-950 border border-slate-700 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 font-medium resize-none"
+                            className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
                           />
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <select
+                              value={editingItemDraft.status}
+                              onChange={(event) => setEditingItemDraft((current) => ({ ...current, status: event.target.value }))}
+                              className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                            >
+                              <option value="open">Open</option>
+                              <option value="done">Done</option>
+                              <option value="archived">Archived</option>
+                            </select>
+                            <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
+                              <input
+                                type="checkbox"
+                                checked={editingItemDraft.pinned}
+                                onChange={(event) => setEditingItemDraft((current) => ({ ...current, pinned: event.target.checked }))}
+                              />
+                              Fixado
+                            </label>
+                          </div>
                           <div className="flex gap-2">
                             <button
-                              onClick={() => handleSaveEditNote(note.id)}
-                              className="flex-1 rounded bg-indigo-600 hover:bg-indigo-500 px-3 py-1.5 text-xs font-bold text-white transition-colors"
+                              onClick={handleSaveEditingItem}
+                              className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
                             >
                               Salvar
                             </button>
                             <button
-                              onClick={handleCancelEditNote}
-                              className="flex-1 rounded border border-slate-700 bg-slate-950 hover:bg-slate-900 px-3 py-1.5 text-xs font-bold text-slate-400 transition-colors"
+                              onClick={() => setEditingItemId(null)}
+                              className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300"
                             >
                               Cancelar
                             </button>
                           </div>
                         </div>
                       ) : (
-                        /* View mode */
-                        <div>
-                          {/* Note Header Info */}
-                          <div className="flex items-center justify-between gap-2 mb-2">
-                            <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-400 bg-indigo-500/5 px-2 py-0.5 rounded border border-indigo-500/10">
-                              {note.note_type}
-                            </span>
-                            
-                            <div className="flex items-center gap-1">
-                              {/* Edit note button */}
-                              <button
-                                onClick={() => handleStartEditNote(note)}
-                                className="p-1 rounded hover:bg-slate-900 transition-colors text-slate-600 hover:text-slate-300 opacity-0 group-hover:opacity-100"
-                                title="Editar nota"
-                              >
-                                <svg xmlns="http://www.w3.org/2000/svg" className="h-3 w-3" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-                                  <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-                                </svg>
-                              </button>
-
-                              {/* Pin note button */}
-                              <button
-                                onClick={() => handleTogglePinNote(note)}
-                                className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-300", note.pinned && "text-indigo-400")}
-                              >
-                                <Pin className="h-3 w-3" />
-                              </button>
-
-                              {/* To Do Checkbox if todo type */}
-                              {note.note_type === "todo" && (
-                                <button
-                                  onClick={() => handleToggleNoteStatus(note)}
-                                  className={cn("p-1 rounded hover:bg-slate-900 transition-colors text-slate-500 hover:text-slate-300", note.status === "done" && "text-emerald-400")}
-                                >
-                                  <Sliders className="h-3 w-3" />
-                                </button>
-                              )}
-
-                              {/* Delete Note button */}
-                              <button
-                                onClick={() => handleDeleteNote(note.id)}
-                                className="p-1 rounded hover:bg-rose-950/20 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </div>
-                          </div>
-
-                          {/* Note Title */}
-                          {note.title && (
-                            <h5 className="text-xs font-bold text-slate-200 mb-1 leading-snug">
-                              {note.title}
-                            </h5>
+                        <div className="space-y-3">
+                          {item.url ? (
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 text-sm font-medium text-sky-300 hover:underline"
+                            >
+                              <Link2 className="h-4 w-4" />
+                              {item.url}
+                            </a>
+                          ) : null}
+                          {item.body ? (
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
+                              {item.body}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-slate-500">Sem observacoes.</p>
                           )}
-
-                          {/* Note Body */}
-                          <p className={cn(
-                            "text-xs leading-relaxed text-slate-400 whitespace-pre-wrap",
-                            note.status === "done" && "line-through text-slate-500"
-                          )}>
-                            {note.body}
-                          </p>
-
-                          {/* Created date footer */}
-                          <div className="mt-3 pt-2.5 border-t border-slate-800/30 text-[10px] text-slate-500 font-mono font-medium">
-                            Adicionado em: {new Date(note.created_at).toLocaleString("pt-BR")}
+                          <div className="flex flex-wrap items-center gap-2 pt-2">
+                            <span className="rounded-full border border-slate-800 bg-slate-900 px-2.5 py-1 text-xs text-slate-400">
+                              {item.status}
+                            </span>
+                            {item.pinned ? (
+                              <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs text-amber-200">
+                                Fixado
+                              </span>
+                            ) : null}
+                            <button
+                              onClick={() => handleStartEditingItem(item)}
+                              className="ml-auto rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
+                            >
+                              Editar
+                            </button>
                           </div>
                         </div>
                       )}
                     </div>
-                  ))}
-                </div>
-              )}
+                  );
+                })}
+              </div>
             </div>
           </div>
-        )}
-
-        {/* TAB 4: REFERÊNCIAS VINCULADAS (REFERENCES) */}
-        {activeTab === "referencias" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Create/Link reference form panel */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 shadow-sm self-start">
-              <h3 className="text-sm font-bold text-white mb-4 uppercase tracking-wider select-none">Vincular Referência</h3>
-              <form onSubmit={handleAddReference} className="space-y-4">
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Título da Referência</span>
-                  <input
-                    type="text"
-                    placeholder="Título amigável (opcional)"
-                    value={refTitle}
-                    onChange={(e) => setRefTitle(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-semibold"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Link / URL Externa</span>
-                  <input
-                    type="url"
-                    placeholder="URL externa (opcional)"
-                    value={refUrl}
-                    onChange={(e) => setRefUrl(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ligar a Item de Curadoria</span>
-                  <select
-                    value={selectedContentItemId}
-                    onChange={(e) => setSelectedContentItemId(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-350 outline-none focus:border-indigo-500 font-semibold"
-                  >
-                    <option value="">Nenhum</option>
-                    {allContentItems.map(item => (
-                      <option key={item.id} value={item.id}>{item.title.substring(0, 40)}...</option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Ligar a Fonte Importada (YouTube)</span>
-                  <select
-                    value={selectedRefSourceId}
-                    onChange={(e) => setSelectedRefSourceId(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-800 px-2.5 py-1.5 text-xs text-slate-300 outline-none focus:border-indigo-500 font-semibold"
-                  >
-                    <option value="">Nenhum</option>
-                    {allRefSources.map(src => (
-                      <option key={src.id} value={src.id}>{src.title.substring(0, 40)}...</option>
-                    ))}
-                  </select>
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 transition-all select-none"
-                >
-                  <Link2 className="h-4 w-4" />
-                  <span>Vincular</span>
-                </button>
-              </form>
-            </div>
-
-            {/* References list table */}
-            <div className="lg:col-span-3 space-y-4">
-              {references.length === 0 ? (
-                <div className="text-center text-xs text-slate-500 py-16 border border-dashed border-slate-800 rounded-xl bg-slate-950/10">
-                  Nenhuma referência vinculada a este projeto de vídeo ainda. Use o painel lateral para associar itens.
-                </div>
-              ) : (
-                <div className="rounded-xl border border-slate-800 bg-[#0b101c]/25 overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full border-collapse text-left text-sm text-slate-300">
-                      <thead className="border-b border-slate-800 bg-[#0c1223]/60 text-xs font-bold uppercase tracking-wider text-slate-400">
-                        <tr>
-                          <th className="px-5 py-3.5">Título / Tipo</th>
-                          <th className="px-5 py-3.5">Link / Origem</th>
-                          <th className="px-5 py-3.5 text-center w-20">Ações</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-800/50">
-                        {references.map((ref) => (
-                          <tr key={ref.id} className="hover:bg-slate-900/10 transition-colors">
-                            {/* Title & Badge */}
-                            <td className="px-5 py-3.5">
-                              <div className="flex flex-col gap-0.5">
-                                <span className="font-semibold text-slate-200">
-                                  {ref.title || "Referência Sem Nome"}
-                                </span>
-                                <div className="flex gap-1">
-                                  {ref.content_item_id && (
-                                    <span className="inline-flex text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-550/15 rounded px-1.5 py-0.5">Curadoria</span>
-                                  )}
-                                  {ref.reference_source_id && (
-                                    <span className="inline-flex text-[9px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-550/15 rounded px-1.5 py-0.5">Transição YT</span>
-                                  )}
-                                  {ref.external_url && !ref.content_item_id && !ref.reference_source_id && (
-                                    <span className="inline-flex text-[9px] font-bold bg-slate-500/10 text-slate-400 border border-slate-550/15 rounded px-1.5 py-0.5">Link Externo</span>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-
-                            {/* Linked target URLs */}
-                            <td className="px-5 py-3.5">
-                              {ref.external_url ? (
-                                <a
-                                  href={ref.external_url}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-xs font-semibold text-indigo-450 hover:underline flex items-center gap-1"
-                                >
-                                  <span>{ref.external_url.substring(0, 45)}...</span>
-                                </a>
-                              ) : ref.content_item_id ? (
-                                <Link
-                                  href={`/content/${ref.content_item_id}`}
-                                  className="text-xs font-semibold text-indigo-450 hover:underline"
-                                >
-                                  Ver Item Curado #{ref.content_item_id}
-                                </Link>
-                              ) : ref.reference_source_id ? (
-                                <Link
-                                  href={`/references/${ref.reference_source_id}`}
-                                  className="text-xs font-semibold text-indigo-450 hover:underline"
-                                >
-                                  Ver Fonte Transcrita #{ref.reference_source_id}
-                                </Link>
-                              ) : (
-                                <span className="text-slate-500 text-xs font-medium">-</span>
-                              )}
-                            </td>
-
-                            {/* Actions */}
-                            <td className="px-5 py-3.5 text-center">
-                              <button
-                                onClick={() => handleDeleteReference(ref.id)}
-                                className="h-7 w-7 rounded flex items-center justify-center hover:bg-rose-950/20 text-slate-500 hover:text-rose-400 transition-colors mx-auto"
-                                title="Remover Referência"
-                              >
-                                <Trash2 className="h-4 w-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* TAB 5: MÚSICA / AMBIÊNCIA (AUDIO IDEAS) */}
-        {activeTab === "musica" && (
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-            {/* Create Audio form */}
-            <div className="rounded-xl border border-slate-800 bg-[#0b101c]/35 p-5 shadow-sm self-start">
-              <h3 className="text-sm font-bold text-white mb-4 uppercase tracking-wider select-none">Nova Ideia de Áudio</h3>
-              <form onSubmit={handleAddAudio} className="space-y-4">
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Título da Música / Faixa *</span>
-                  <input
-                    type="text"
-                    placeholder="Ex: Synthwave Beat 120bpm"
-                    value={audioTitle}
-                    onChange={(e) => setAudioTitle(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-semibold"
-                    required
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">URL do Áudio / Arquivo</span>
-                  <input
-                    type="url"
-                    placeholder="Link direto para áudio (.mp3, etc.)"
-                    value={audioUrl}
-                    onChange={(e) => setAudioUrl(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tipo</span>
-                    <select
-                      value={audioType}
-                      onChange={(e) => setAudioType(e.target.value)}
-                      className="w-full rounded bg-slate-950 border border-slate-850 px-2 py-1 text-xs text-slate-355 outline-none focus:border-indigo-500 font-semibold"
-                    >
-                      <option value="background_music">Música Fundo</option>
-                      <option value="sound_effect">Efeito Sonoro</option>
-                      <option value="voiceover">Locução</option>
-                      <option value="other">Outro</option>
-                    </select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Vibe / Mood</span>
-                    <input
-                      type="text"
-                      placeholder="Ex: Tenso"
-                      value={audioMood}
-                      onChange={(e) => setAudioMood(e.target.value)}
-                      className="w-full rounded bg-slate-950 border border-slate-850 px-2 py-1 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Licença / Autor</span>
-                  <input
-                    type="text"
-                    placeholder="Ex: Royalty Free (Envato)"
-                    value={audioLicense}
-                    onChange={(e) => setAudioLicense(e.target.value)}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <span className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">Instruções de Uso</span>
-                  <textarea
-                    placeholder="Ex: Tocar baixo a partir de 01:20..."
-                    value={audioUsage}
-                    onChange={(e) => setAudioUsage(e.target.value)}
-                    rows={2.5}
-                    className="w-full rounded bg-slate-950 border border-slate-850 px-2.5 py-1.5 text-xs text-slate-200 outline-none focus:border-indigo-500 transition-colors font-medium resize-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!audioTitle.trim()}
-                  className="w-full flex items-center justify-center gap-1.5 rounded-lg bg-indigo-600 px-4 py-2 text-xs font-bold text-white hover:bg-indigo-500 transition-all select-none disabled:opacity-40"
-                >
-                  <Music className="h-4 w-4" />
-                  <span>Vincular Áudio</span>
-                </button>
-              </form>
-            </div>
-
-            {/* Audio cards list grid */}
-            <div className="lg:col-span-3 space-y-4">
-              {audios.length === 0 ? (
-                <div className="text-center text-xs text-slate-500 py-16 border border-dashed border-slate-800 rounded-xl bg-slate-950/10">
-                  Nenhuma ideia musical vinculada a este projeto de vídeo. Escreva uma no painel ao lado!
-                </div>
-              ) : (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {audios.map((audio) => (
-                    <div
-                      key={audio.id}
-                      className="rounded-xl border border-slate-800 bg-[#0b101c]/15 p-4 flex flex-col justify-between backdrop-blur-sm group"
-                    >
-                      <div>
-                        {/* Audio Card Header */}
-                        <div className="flex items-center justify-between gap-2 mb-2 select-none">
-                          <span className="text-[9px] font-bold uppercase tracking-wider text-amber-400 bg-amber-500/5 px-2 py-0.5 rounded border border-amber-500/10">
-                            {audio.audio_type === "background_music" ? "Música de Fundo" : audio.audio_type === "sound_effect" ? "SFX / Efeito" : "Voz / Locução"}
-                          </span>
-                          
-                          <button
-                            onClick={() => handleDeleteAudio(audio.id)}
-                            className="p-1 rounded hover:bg-rose-950/20 text-slate-600 hover:text-rose-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                            title="Deletar áudio"
-                          >
-                            <Trash2 className="h-3.5 w-3.5" />
-                          </button>
-                        </div>
-
-                        {/* Title */}
-                        <h5 className="text-sm font-bold text-slate-200 flex items-center gap-2 mb-1.5">
-                          <Disc className="h-4 w-4 text-indigo-400 shrink-0" />
-                          {audio.audio_title}
-                        </h5>
-
-                        {/* Mood / License */}
-                        <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-slate-500 font-semibold mb-3">
-                          {audio.mood && <span>Mood: <strong className="text-slate-400">{audio.mood}</strong></span>}
-                          {audio.license_notes && <span>Licença: <strong className="text-slate-400">{audio.license_notes}</strong></span>}
-                        </div>
-
-                        {/* Usage notes */}
-                        {audio.usage_notes && (
-                          <p className="text-xs text-slate-400 leading-relaxed italic bg-slate-950/40 p-2.5 rounded border border-slate-850/40 mb-3">
-                            {audio.usage_notes}
-                          </p>
-                        )}
-                      </div>
-
-                      {/* HTML Audio Player if URL is set */}
-                      {audio.audio_url ? (
-                        <div className="mt-2 bg-slate-950 p-2 rounded-lg border border-slate-850">
-                          <audio
-                            src={audio.audio_url}
-                            controls
-                            className="w-full h-8 outline-none"
-                          />
-                        </div>
-                      ) : (
-                        <div className="text-[10px] text-slate-600 font-medium italic mt-2">
-                          Nenhum player de áudio disponível (URL ausente).
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+        ) : null}
       </div>
     </div>
   );

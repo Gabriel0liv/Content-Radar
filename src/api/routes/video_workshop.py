@@ -15,6 +15,11 @@ from src.schemas.video_workshop import (
     VideoProjectReferenceRead,
     VideoProjectAudioIdeaCreate,
     VideoProjectAudioIdeaRead,
+    VideoProjectItemCreate,
+    VideoProjectItemUpdate,
+    VideoProjectItemRead,
+    VideoProjectItemFromScriptExcerpt,
+    VideoProjectBoardNodeFromItem,
     VideoProjectBoardNodeCreate,
     VideoProjectBoardNodeUpdate,
     VideoProjectBoardNodeRead,
@@ -171,6 +176,80 @@ def delete_project_audio_idea(id: int, db: Session = Depends(get_db)):
     if not success:
         raise HTTPException(status_code=404, detail="Ideia de áudio não encontrada")
     return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# --- Unified Workshop Items ---
+@router.get("/video-projects/{id}/items", response_model=List[VideoProjectItemRead])
+def list_project_items(
+    id: int,
+    item_type: Optional[str] = Query(None),
+    status_filter: Optional[str] = Query(None, alias="status"),
+    pinned: Optional[bool] = Query(None),
+    db: Session = Depends(get_db)
+):
+    service = VideoWorkshopService(db)
+    project = service.get_video_project(id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
+    return service.list_items_for_project(id, item_type=item_type, status=status_filter, pinned=pinned)
+
+@router.post("/video-projects/{id}/items", response_model=VideoProjectItemRead, status_code=status.HTTP_201_CREATED)
+def create_project_item(id: int, payload: VideoProjectItemCreate, db: Session = Depends(get_db)):
+    service = VideoWorkshopService(db)
+    project = service.get_video_project(id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
+    return service.create_item_for_project(id, payload)
+
+@router.patch("/video-project-items/{id}", response_model=VideoProjectItemRead)
+def update_project_item(id: int, payload: VideoProjectItemUpdate, db: Session = Depends(get_db)):
+    service = VideoWorkshopService(db)
+    item = service.update_item(id, payload)
+    if not item:
+        raise HTTPException(status_code=404, detail="Elemento da oficina não encontrado")
+    return item
+
+@router.delete("/video-project-items/{id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_project_item(id: int, db: Session = Depends(get_db)):
+    service = VideoWorkshopService(db)
+    success = service.delete_item(id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Elemento da oficina não encontrado")
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+@router.post("/video-projects/{id}/items/from-script-excerpt", response_model=VideoProjectItemRead, status_code=status.HTTP_201_CREATED)
+def create_project_item_from_script_excerpt(
+    id: int,
+    payload: VideoProjectItemFromScriptExcerpt,
+    db: Session = Depends(get_db)
+):
+    service = VideoWorkshopService(db)
+    project = service.get_video_project(id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
+    return service.create_item_from_script_excerpt(id, payload)
+
+@router.post("/video-projects/{id}/board/nodes/from-item", response_model=VideoProjectBoardNodeRead, status_code=status.HTTP_201_CREATED)
+def create_project_board_node_from_item(
+    id: int,
+    payload: VideoProjectBoardNodeFromItem,
+    db: Session = Depends(get_db)
+):
+    service = VideoWorkshopService(db)
+    project = service.get_video_project(id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
+    node = service.create_board_node_from_item(
+        id,
+        payload.item_id,
+        x=payload.x,
+        y=payload.y,
+        width=payload.width,
+        height=payload.height
+    )
+    if not node:
+        raise HTTPException(status_code=404, detail="Elemento da oficina não encontrado para este projeto")
+    return node
 
 
 # --- Board State & Controls ---

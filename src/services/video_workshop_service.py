@@ -8,6 +8,7 @@ from src.models.video_workshop import (
     VideoProjectNote,
     VideoProjectReference,
     VideoProjectAudioIdea,
+    VideoProjectItem,
     VideoProjectBoardNode,
     VideoProjectBoardEdge
 )
@@ -18,6 +19,9 @@ from src.schemas.video_workshop import (
     VideoProjectNoteUpdate,
     VideoProjectReferenceCreate,
     VideoProjectAudioIdeaCreate,
+    VideoProjectItemCreate,
+    VideoProjectItemUpdate,
+    VideoProjectItemFromScriptExcerpt,
     VideoProjectBoardNodeCreate,
     VideoProjectBoardNodeUpdate,
     VideoProjectBoardEdgeCreate,
@@ -25,9 +29,7 @@ from src.schemas.video_workshop import (
 )
 
 def extract_text_from_tiptap_json(node: Any) -> str:
-    """
-    Recursively extracts plain text from a Tiptap JSON node structure.
-    """
+    """Recursively extracts plain text from a Tiptap JSON node structure."""
     if not node:
         return ""
     if isinstance(node, dict):
@@ -41,15 +43,11 @@ def extract_text_from_tiptap_json(node: Any) -> str:
     return ""
 
 def calculate_word_and_duration(text: str) -> Tuple[int, int]:
-    """
-    Returns (word_count, estimated_duration_seconds) based on 150 words per minute reading speed.
-    """
+    """Returns (word_count, estimated_duration_seconds) based on 150 wpm."""
     if not text or not text.strip():
         return 0, 0
     words = text.split()
     word_count = len(words)
-    # 150 words per minute -> 150 words / 60 seconds -> 2.5 words per second
-    # duration = word_count / 2.5
     duration_seconds = int(round((word_count / 150.0) * 60.0))
     return word_count, duration_seconds
 
@@ -59,7 +57,8 @@ class VideoWorkshopService:
         self.db = db
         self.repo = VideoWorkshopRepository(db)
 
-    # --- Video Projects ---
+    # ── Video Projects ───────────────────────────────────────────────────────
+
     def create_video_project(self, project_in: VideoProjectCreate) -> VideoProject:
         return self.repo.create_video_project(project_in)
 
@@ -68,17 +67,14 @@ class VideoWorkshopService:
         if not db_project:
             return None
 
-        # Determine if script text or JSON changed to recompute duration/word count
         word_count = None
         estimated_duration_seconds = None
 
         script_text = project_in.script_text
         script_json = project_in.script_content_json
 
-        # If plain text is explicitly passed
         if script_text is not None:
             word_count, estimated_duration_seconds = calculate_word_and_duration(script_text)
-        # Else if only rich JSON content is updated, extract text to compute
         elif script_json is not None:
             plain_text = extract_text_from_tiptap_json(script_json)
             word_count, estimated_duration_seconds = calculate_word_and_duration(plain_text)
@@ -103,12 +99,8 @@ class VideoWorkshopService:
         video_format: Optional[str] = None
     ) -> Tuple[List[VideoProject], int]:
         return self.repo.list_video_projects(
-            limit=limit,
-            offset=offset,
-            search=search,
-            status=status,
-            niche=niche,
-            video_format=video_format
+            limit=limit, offset=offset, search=search,
+            status=status, niche=niche, video_format=video_format
         )
 
     def archive_video_project(self, project_id: int) -> Optional[VideoProject]:
@@ -118,8 +110,8 @@ class VideoWorkshopService:
     def delete_video_project(self, project_id: int) -> bool:
         return self.repo.delete_video_project(project_id)
 
+    # ── Notes (legacy) ───────────────────────────────────────────────────────
 
-    # --- Notes ---
     def get_note(self, note_id: int) -> Optional[VideoProjectNote]:
         return self.repo.get_note_by_id(note_id)
 
@@ -135,8 +127,8 @@ class VideoWorkshopService:
     def delete_note(self, note_id: int) -> bool:
         return self.repo.delete_note(note_id)
 
+    # ── References (legacy) ──────────────────────────────────────────────────
 
-    # --- References ---
     def list_references_for_project(self, project_id: int) -> List[VideoProjectReference]:
         return self.repo.list_references_by_project(project_id)
 
@@ -146,8 +138,8 @@ class VideoWorkshopService:
     def delete_reference(self, reference_id: int) -> bool:
         return self.repo.delete_reference(reference_id)
 
+    # ── Audio Ideas (legacy) ─────────────────────────────────────────────────
 
-    # --- Audio Ideas ---
     def list_audio_ideas_for_project(self, project_id: int) -> List[VideoProjectAudioIdea]:
         return self.repo.list_audio_ideas_by_project(project_id)
 
@@ -157,15 +149,51 @@ class VideoWorkshopService:
     def delete_audio_idea(self, audio_id: int) -> bool:
         return self.repo.delete_audio_idea(audio_id)
 
+    # ── VideoProjectItems ────────────────────────────────────────────────────
 
-    # --- BoardState ---
+    def list_items_for_project(
+        self,
+        project_id: int,
+        item_type: Optional[str] = None,
+        status: Optional[str] = None,
+        pinned: Optional[bool] = None
+    ) -> List[VideoProjectItem]:
+        return self.repo.list_items_by_project(project_id, item_type=item_type, status=status, pinned=pinned)
+
+    def create_item_for_project(self, project_id: int, item_in: VideoProjectItemCreate) -> VideoProjectItem:
+        return self.repo.create_item(project_id, item_in)
+
+    def update_item(self, item_id: int, item_in: VideoProjectItemUpdate) -> Optional[VideoProjectItem]:
+        return self.repo.update_item(item_id, item_in)
+
+    def delete_item(self, item_id: int) -> bool:
+        return self.repo.delete_item(item_id)
+
+    def create_item_from_script_excerpt(
+        self, project_id: int, payload: VideoProjectItemFromScriptExcerpt
+    ) -> VideoProjectItem:
+        return self.repo.create_item_from_script_excerpt(project_id, payload.text, payload.title)
+
+    def create_board_node_from_item(
+        self,
+        project_id: int,
+        item_id: int,
+        x: float = 200.0,
+        y: float = 200.0,
+        width: Optional[float] = 200.0,
+        height: Optional[float] = 100.0
+    ) -> Optional[VideoProjectBoardNode]:
+        node = self.repo.create_board_node_from_item(project_id, item_id, x=x, y=y, width=width, height=height)
+        if node:
+            self.repo.touch_video_project(project_id)
+        return node
+
+    # ── Board State ──────────────────────────────────────────────────────────
+
     def get_board_state_for_project(self, project_id: int) -> Dict[str, Any]:
         nodes = self.repo.list_board_nodes_by_project(project_id)
         edges = self.repo.list_board_edges_by_project(project_id)
-        return {
-            "nodes": nodes,
-            "edges": edges
-        }
+        return {"nodes": nodes, "edges": edges}
 
     def save_board_state_for_project(
         self,
@@ -174,10 +202,7 @@ class VideoWorkshopService:
         edges_in: List[VideoProjectBoardEdgeCreate]
     ) -> Dict[str, Any]:
         nodes, edges = self.repo.sync_board_state(project_id, nodes_in, edges_in)
-        return {
-            "nodes": nodes,
-            "edges": edges
-        }
+        return {"nodes": nodes, "edges": edges}
 
     def create_board_node_for_project(self, project_id: int, node_in: VideoProjectBoardNodeCreate) -> VideoProjectBoardNode:
         return self.repo.create_board_node(project_id, node_in)
