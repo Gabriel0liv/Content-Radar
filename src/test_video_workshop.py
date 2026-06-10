@@ -390,7 +390,7 @@ def test_canva_oauth_start_authorization_and_callback_and_refresh():
         {
             "CANVA_CLIENT_ID": "client-123",
             "CANVA_CLIENT_SECRET": "secret-xyz",
-            "CANVA_REDIRECT_URI": "http://localhost:8000/canva/oauth/callback",
+            "CANVA_REDIRECT_URI": "http://127.0.0.1:8000/canva/oauth/callback",
             "CANVA_SCOPES": "design:content:write design:meta:read",
         },
         clear=False,
@@ -401,7 +401,7 @@ def test_canva_oauth_start_authorization_and_callback_and_refresh():
 
         assert params["client_id"] == ["client-123"]
         assert params["response_type"] == ["code"]
-        assert params["redirect_uri"] == ["http://localhost:8000/canva/oauth/callback"]
+        assert params["redirect_uri"] == ["http://127.0.0.1:8000/canva/oauth/callback"]
         assert params["scope"] == ["design:content:write design:meta:read"]
         assert params["code_challenge_method"] == ["S256"]
         assert "state" in params and params["state"][0]
@@ -484,7 +484,7 @@ def test_canva_oauth_valid_access_token_fallback_and_auto_refresh():
         {
             "CANVA_CLIENT_ID": "client-123",
             "CANVA_CLIENT_SECRET": "secret-xyz",
-            "CANVA_REDIRECT_URI": "http://localhost:8000/canva/oauth/callback",
+            "CANVA_REDIRECT_URI": "http://127.0.0.1:8000/canva/oauth/callback",
         },
         clear=False,
     ):

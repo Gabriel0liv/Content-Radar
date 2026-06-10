@@ -268,7 +268,7 @@ Configure estas variáveis no backend:
 ```ini
 CANVA_CLIENT_ID=
 CANVA_CLIENT_SECRET=
-CANVA_REDIRECT_URI=http://localhost:8000/canva/oauth/callback
+CANVA_REDIRECT_URI=http://127.0.0.1:8000/canva/oauth/callback
 CANVA_BASE_URL=https://api.canva.com/rest/v1
 CANVA_OAUTH_AUTHORIZE_URL=https://www.canva.com/api/oauth/authorize
 CANVA_SCOPES=design:content:write design:meta:read
