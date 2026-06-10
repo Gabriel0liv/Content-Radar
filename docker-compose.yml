@@ -23,8 +23,17 @@ services:
     build: .
     container_name: dark_content_migrate
     command: alembic upgrade head
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
+      - CANVA_CLIENT_ID=${CANVA_CLIENT_ID:-}
+      - CANVA_CLIENT_SECRET=${CANVA_CLIENT_SECRET:-}
+      - CANVA_REDIRECT_URI=${CANVA_REDIRECT_URI:-}
+      - CANVA_BASE_URL=${CANVA_BASE_URL:-https://api.canva.com/rest/v1}
+      - CANVA_OAUTH_AUTHORIZE_URL=${CANVA_OAUTH_AUTHORIZE_URL:-https://www.canva.com/api/oauth/authorize}
+      - CANVA_SCOPES=${CANVA_SCOPES:-design:content:write design:meta:read}
+      - CANVA_ACCESS_TOKEN=${CANVA_ACCESS_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -38,9 +47,18 @@ services:
     command: uvicorn src.api.main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
       - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
       - N8N_SEARCH_WEBHOOK_URL=${N8N_SEARCH_WEBHOOK_URL:-}
+      - CANVA_CLIENT_ID=${CANVA_CLIENT_ID:-}
+      - CANVA_CLIENT_SECRET=${CANVA_CLIENT_SECRET:-}
+      - CANVA_REDIRECT_URI=${CANVA_REDIRECT_URI:-}
+      - CANVA_BASE_URL=${CANVA_BASE_URL:-https://api.canva.com/rest/v1}
+      - CANVA_OAUTH_AUTHORIZE_URL=${CANVA_OAUTH_AUTHORIZE_URL:-https://www.canva.com/api/oauth/authorize}
+      - CANVA_SCOPES=${CANVA_SCOPES:-design:content:write design:meta:read}
+      - CANVA_ACCESS_TOKEN=${CANVA_ACCESS_TOKEN:-}
     depends_on:
       postgres:
         condition: service_healthy
