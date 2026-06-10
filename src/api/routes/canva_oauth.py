@@ -36,11 +36,28 @@ def start_canva_oauth(
 
 @router.get("/canva/oauth/callback", response_model=CanvaOAuthCallbackRead)
 def canva_oauth_callback(
-    code: str,
-    state: str,
+    code: str | None = None,
+    state: str | None = None,
+    error: str | None = None,
+    error_description: str | None = None,
     json: bool = Query(False),
     db: Session = Depends(get_db),
 ):
+    if error:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Erro OAuth do Canva: {error_description or error}",
+        )
+
+    if not code:
+        raise HTTPException(
+            status_code=400,
+            detail="Callback OAuth do Canva sem code. Verifique redirect_uri, scopes e autorização no Canva Developer Portal.",
+        )
+
+    if not state:
+        raise HTTPException(status_code=400, detail="Callback OAuth do Canva sem state.")
+
     service = CanvaOAuthService(db)
     try:
         token = service.handle_callback(code=code, state=state)
