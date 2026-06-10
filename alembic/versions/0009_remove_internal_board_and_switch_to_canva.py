@@ -48,10 +48,27 @@ def upgrade() -> None:
         op.execute("DROP INDEX IF EXISTS idx_video_project_board_nodes_project_id")
         op.drop_table("video_project_board_nodes")
 
+    if _has_table(inspector, "video_project_external_boards"):
+        op.execute("DELETE FROM video_project_external_boards WHERE provider <> 'canva'")
+        op.execute("ALTER TABLE video_project_external_boards DROP CONSTRAINT IF EXISTS check_video_project_external_boards_provider")
+        op.execute(
+            "ALTER TABLE video_project_external_boards "
+            "ADD CONSTRAINT check_video_project_external_boards_provider "
+            "CHECK (provider = 'canva')"
+        )
+
 
 def downgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
+
+    if _has_table(inspector, "video_project_external_boards"):
+        op.execute("ALTER TABLE video_project_external_boards DROP CONSTRAINT IF EXISTS check_video_project_external_boards_provider")
+        op.execute(
+            "ALTER TABLE video_project_external_boards "
+            "ADD CONSTRAINT check_video_project_external_boards_provider "
+            "CHECK (provider IN ('miro', 'canva'))"
+        )
 
     if not _has_table(inspector, "video_project_board_nodes"):
         op.create_table(

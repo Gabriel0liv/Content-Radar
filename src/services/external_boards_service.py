@@ -31,10 +31,7 @@ class ExternalBoardsService:
         return token
 
     def _get_canva_base_url(self) -> str:
-        base_url = (os.getenv("CANVA_BASE_URL", "") or "").strip().rstrip("/")
-        if not base_url:
-            raise RuntimeError("Canva não configurado: CANVA_BASE_URL ausente")
-        return base_url
+        return (os.getenv("CANVA_BASE_URL") or "https://api.canva.com/rest/v1").strip().rstrip("/")
 
     def _extract_design_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         design = payload.get("design")

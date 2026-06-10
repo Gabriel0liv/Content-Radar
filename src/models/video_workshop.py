@@ -172,7 +172,7 @@ class VideoProjectExternalBoard(Base):
 
     __table_args__ = (
         UniqueConstraint("provider", "external_id", name="uq_video_project_external_boards_provider_external_id"),
-        CheckConstraint("provider IN ('miro', 'canva')", name="check_video_project_external_boards_provider"),
+        CheckConstraint("provider = 'canva'", name="check_video_project_external_boards_provider"),
         Index("idx_video_project_external_boards_project_id", video_project_id),
         Index("idx_video_project_external_boards_provider", provider),
     )

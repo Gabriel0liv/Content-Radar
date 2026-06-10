@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 
 from src.models.video_workshop import (
