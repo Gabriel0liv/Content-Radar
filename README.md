@@ -259,18 +259,36 @@ A aplicação estará disponível em [http://localhost:3000](http://localhost:30
 * **Tratamento de Erros e Status Online**: Indicador de conexão na barra de cabeçalho que avisa em tempo real se a API FastAPI cair, apresentando um banner explicativo de instrução para restabelecer a conexão.
 
 ### Quadro visual externo
-O quadro interno legado do workshop foi removido do fluxo recomendado. A direção atual é usar um provider visual externo, com **Canva** como opção principal.
+O quadro interno legado do workshop foi removido do fluxo recomendado. A direção atual é usar o **Canva** como provider visual externo principal.
 
-Para preparar a integração em ambiente local:
+#### Configuração recomendada: OAuth do Canva
+
+Configure estas variáveis no backend:
 
 ```ini
-CANVA_ACCESS_TOKEN=seu_token_aqui
+CANVA_CLIENT_ID=
+CANVA_CLIENT_SECRET=
+CANVA_REDIRECT_URI=http://localhost:8000/canva/oauth/callback
+CANVA_BASE_URL=https://api.canva.com/rest/v1
+CANVA_OAUTH_AUTHORIZE_URL=https://www.canva.com/api/oauth/authorize
+CANVA_SCOPES=design:content:write design:meta:read
 ```
 
-Observações desta fase:
-* Os links de visualização e edição podem ser **temporários** e devem ser tratados como efémeros em testes, QA e handoff.
-* Alguns fluxos começam a partir de **designs em branco** no Canva; isso é esperado enquanto a automação do provider visual externo evolui.
-* O Miro ainda pode aparecer em partes legadas do código durante a transição, mas o objetivo do produto é centralizar o quadro visual fora do app e priorizar Canva.
+Passo a passo:
+1. Crie uma integração no Canva Developer Portal.
+2. Configure a redirect URI exatamente como `CANVA_REDIRECT_URI`.
+3. Garanta os scopes `design:content:write` e `design:meta:read`.
+4. Suba o backend.
+5. Acesse [http://localhost:8000/canva/oauth/start](http://localhost:8000/canva/oauth/start).
+6. Autorize a aplicação no Canva.
+7. Volte ao app e crie o board externo normalmente.
+
+Observações:
+* `CANVA_ACCESS_TOKEN` ainda funciona como fallback temporário/dev se não houver token OAuth salvo.
+* O backend renova automaticamente o access token usando o refresh token quando necessário.
+* Se o refresh falhar, o utilizador deve reconectar o Canva.
+* Os links de visualização e edição podem ser temporários; use o refresh de URL no app quando expirarem.
+* Designs em branco no Canva são esperados nesta fase do fluxo.
 
 
 ---
@@ -335,5 +353,4 @@ Este novo módulo permite adicionar referências analíticas importando dados de
 
 > [!CAUTION]
 > **Nota Legal de Uso**: As transcrições e metadados extraídos pelo portal destinam-se exclusivamente a análises de engajamento, triagem editorial e inspiração original para criação de roteiros próprios. O sistema não deve ser utilizado para plágio ou cópia não autorizada de conteúdos protegidos por direitos autorais de terceiros.
-
 

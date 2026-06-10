@@ -1,10 +1,20 @@
 import sys
 import time
+import hashlib
+import base64
+import os
+from datetime import datetime, timedelta, timezone
+from urllib.parse import parse_qs, urlparse
+from unittest.mock import patch
 
 import src.db.base
+from fastapi.testclient import TestClient
 from sqlalchemy.exc import IntegrityError
 
+from src.api.main import app
+from src.db.session import Base
 from src.db.session import SessionLocal
+from src.models.canva_oauth import CanvaOAuthState, CanvaOAuthToken
 from src.models.video_workshop import (
     VideoProject,
     VideoProjectAudioIdea,
@@ -22,12 +32,32 @@ from src.schemas.video_workshop import (
     VideoProjectReferenceCreate,
     VideoProjectUpdate,
 )
+from src.schemas.canva_oauth import CanvaOAuthStatusRead
+from src.services.canva_oauth_service import CanvaOAuthService
 from src.services.external_boards_service import ExternalBoardsService
 from src.services.video_workshop_service import (
     VideoWorkshopService,
     calculate_word_and_duration,
     extract_text_from_tiptap_json,
 )
+
+
+class MockHTTPResponse:
+    def __init__(self, payload: dict, status_code: int = 200, text: str | None = None):
+        self._payload = payload
+        self.status_code = status_code
+        self.text = text or ""
+        self.content = b"payload"
+
+    def json(self):
+        return self._payload
+
+
+def reset_canva_oauth_tables(db):
+    Base.metadata.create_all(bind=db.get_bind(), tables=[CanvaOAuthState.__table__, CanvaOAuthToken.__table__])
+    db.query(CanvaOAuthState).delete()
+    db.query(CanvaOAuthToken).delete()
+    db.commit()
 
 
 def create_mock_canva_board(
@@ -334,12 +364,225 @@ def test_note_create_touches_project_updated_at():
     print("✓ test_note_create_touches_project_updated_at passed")
 
 
+def test_canva_oauth_generate_pkce_pair():
+    print("\nRunning test_canva_oauth_generate_pkce_pair...")
+    db = SessionLocal()
+    service = CanvaOAuthService(db)
+
+    verifier, challenge = service.generate_pkce_pair()
+    expected = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode("utf-8")).digest()).decode("utf-8").rstrip("=")
+
+    assert 43 <= len(verifier) <= 128, f"Invalid verifier length: {len(verifier)}"
+    assert challenge == expected, "PKCE challenge does not match SHA256 verifier digest"
+    assert "=" not in challenge, "Challenge should not contain padding"
+    db.close()
+    print("✓ test_canva_oauth_generate_pkce_pair passed")
+
+
+def test_canva_oauth_start_authorization_and_callback_and_refresh():
+    print("\nRunning test_canva_oauth_start_authorization_and_callback_and_refresh...")
+    db = SessionLocal()
+    service = CanvaOAuthService(db)
+    reset_canva_oauth_tables(db)
+
+    with patch.dict(
+        os.environ,
+        {
+            "CANVA_CLIENT_ID": "client-123",
+            "CANVA_CLIENT_SECRET": "secret-xyz",
+            "CANVA_REDIRECT_URI": "http://localhost:8000/canva/oauth/callback",
+            "CANVA_SCOPES": "design:content:write design:meta:read",
+        },
+        clear=False,
+    ):
+        authorization_url = service.start_authorization(redirect_after="/scripts/12")
+        parsed = urlparse(authorization_url)
+        params = parse_qs(parsed.query)
+
+        assert params["client_id"] == ["client-123"]
+        assert params["response_type"] == ["code"]
+        assert params["redirect_uri"] == ["http://localhost:8000/canva/oauth/callback"]
+        assert params["scope"] == ["design:content:write design:meta:read"]
+        assert params["code_challenge_method"] == ["S256"]
+        assert "state" in params and params["state"][0]
+        assert "code_challenge" in params and params["code_challenge"][0]
+
+        saved_state = db.query(CanvaOAuthState).filter(CanvaOAuthState.state == params["state"][0]).first()
+        assert saved_state is not None, "OAuth state was not persisted"
+        assert saved_state.redirect_after == "/scripts/12"
+
+        issued_refresh_token = "refresh-token-1"
+
+        def mock_post(url, auth=None, data=None, headers=None, timeout=None):
+            assert url.endswith("/oauth/token")
+            assert data["grant_type"] == "authorization_code"
+            assert data["code_verifier"] == saved_state.code_verifier
+            return MockHTTPResponse(
+                {
+                    "access_token": "access-token-1",
+                    "refresh_token": issued_refresh_token,
+                    "token_type": "Bearer",
+                    "scope": "design:content:write design:meta:read",
+                    "expires_in": 3600,
+                }
+            )
+
+        with patch("src.services.canva_oauth_service.requests.post", side_effect=mock_post):
+            token = service.handle_callback(code="auth-code-1", state=saved_state.state)
+
+        assert token.access_token == "access-token-1"
+        assert token.refresh_token == "refresh-token-1"
+        db.refresh(saved_state)
+        assert saved_state.used_at is not None, "OAuth state should be marked as used"
+
+        def mock_refresh_post(url, auth=None, data=None, headers=None, timeout=None):
+            assert data["grant_type"] == "refresh_token"
+            assert data["refresh_token"] == "refresh-token-1"
+            return MockHTTPResponse(
+                {
+                    "access_token": "access-token-2",
+                    "refresh_token": "refresh-token-2",
+                    "token_type": "Bearer",
+                    "scope": "design:content:write design:meta:read",
+                    "expires_in": 7200,
+                }
+            )
+
+        with patch("src.services.canva_oauth_service.requests.post", side_effect=mock_refresh_post):
+            refreshed = service.refresh_access_token()
+
+        assert refreshed.access_token == "access-token-2"
+        assert refreshed.refresh_token == "refresh-token-2", "Refresh token should rotate when provider returns a new one"
+
+    reset_canva_oauth_tables(db)
+    db.close()
+    print("✓ test_canva_oauth_start_authorization_and_callback_and_refresh passed")
+
+
+def test_canva_oauth_valid_access_token_fallback_and_auto_refresh():
+    print("\nRunning test_canva_oauth_valid_access_token_fallback_and_auto_refresh...")
+    db = SessionLocal()
+    service = CanvaOAuthService(db)
+    reset_canva_oauth_tables(db)
+
+    with patch.dict(os.environ, {"CANVA_ACCESS_TOKEN": "dev-fallback-token"}, clear=False):
+        assert service.get_valid_access_token() == "dev-fallback-token"
+
+    token = CanvaOAuthToken(
+        provider="canva",
+        access_token="old-access-token",
+        refresh_token="old-refresh-token",
+        token_type="Bearer",
+        scopes="design:content:write design:meta:read",
+        expires_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+    )
+    db.add(token)
+    db.commit()
+
+    with patch.dict(
+        os.environ,
+        {
+            "CANVA_CLIENT_ID": "client-123",
+            "CANVA_CLIENT_SECRET": "secret-xyz",
+            "CANVA_REDIRECT_URI": "http://localhost:8000/canva/oauth/callback",
+        },
+        clear=False,
+    ):
+        def mock_refresh_post(url, auth=None, data=None, headers=None, timeout=None):
+            return MockHTTPResponse(
+                {
+                    "access_token": "fresh-access-token",
+                    "refresh_token": "fresh-refresh-token",
+                    "token_type": "Bearer",
+                    "scope": "design:content:write design:meta:read",
+                    "expires_in": 3600,
+                }
+            )
+
+        with patch("src.services.canva_oauth_service.requests.post", side_effect=mock_refresh_post):
+            resolved = service.get_valid_access_token()
+
+        assert resolved == "fresh-access-token"
+        stored = db.query(CanvaOAuthToken).filter(CanvaOAuthToken.provider == "canva").first()
+        assert stored.refresh_token == "fresh-refresh-token"
+
+    reset_canva_oauth_tables(db)
+    db.close()
+    print("✓ test_canva_oauth_valid_access_token_fallback_and_auto_refresh passed")
+
+
+def test_canva_oauth_status_route_and_external_board_token_usage():
+    print("\nRunning test_canva_oauth_status_route_and_external_board_token_usage...")
+    db = SessionLocal()
+    reset_canva_oauth_tables(db)
+
+    token = CanvaOAuthToken(
+        provider="canva",
+        access_token="opaque-access-token",
+        refresh_token="opaque-refresh-token",
+        token_type="Bearer",
+        scopes="design:content:write design:meta:read",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
+    )
+    db.add(token)
+    db.commit()
+    db.close()
+
+    client = TestClient(app)
+    response = client.get("/canva/oauth/status")
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    parsed = CanvaOAuthStatusRead(**payload)
+    assert parsed.connected is True
+    assert "access_token" not in payload and "refresh_token" not in payload
+
+    db = SessionLocal()
+    project = VideoWorkshopService(db).create_video_project(
+        VideoProjectCreate(title="OAuth External Board", status="idea", priority=0)
+    )
+    external_service = ExternalBoardsService(db)
+
+    def mock_request(method, url, headers=None, json=None, timeout=None):
+        assert headers["Authorization"] == "Bearer service-token"
+        assert method == "POST"
+        assert url.endswith("/designs")
+        return MockHTTPResponse(
+            {
+                "design": {
+                    "id": "design-from-oauth",
+                    "title": "OAuth Board",
+                    "urls": {
+                        "edit_url": "https://www.canva.com/design/oauth/edit",
+                        "view_url": "https://www.canva.com/design/oauth/view",
+                    },
+                }
+            }
+        )
+
+    with patch("src.services.external_boards_service.CanvaOAuthService.get_valid_access_token", return_value="service-token"):
+        with patch("src.services.external_boards_service.requests.request", side_effect=mock_request):
+            board = external_service.create_canva_board_for_project(project.id)
+
+    assert board.external_id == "design-from-oauth"
+    assert board.provider == "canva"
+
+    db.query(VideoProject).filter(VideoProject.id == project.id).delete()
+    reset_canva_oauth_tables(db)
+    db.commit()
+    db.close()
+    print("✓ test_canva_oauth_status_route_and_external_board_token_usage passed")
+
+
 if __name__ == "__main__":
     try:
         test_tiptap_word_count()
         test_video_projects_crud_and_cascade()
         test_items_script_excerpt_and_mocked_canva_external_board()
         test_note_create_touches_project_updated_at()
+        test_canva_oauth_generate_pkce_pair()
+        test_canva_oauth_start_authorization_and_callback_and_refresh()
+        test_canva_oauth_valid_access_token_fallback_and_auto_refresh()
+        test_canva_oauth_status_route_and_external_board_token_usage()
         print("\nAll video workshop tests passed successfully!")
     except AssertionError as e:
         print(f"\nAssertion error: {e}")

@@ -9,6 +9,7 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   archiveVideoProject,
   createCanvaBoard,
+  getCanvaOAuthStatus,
   createVideoProjectItem,
   createVideoProjectItemFromScriptExcerpt,
   deleteVideoProject,
@@ -17,10 +18,12 @@ import {
   getVideoProject,
   getVideoProjectItems,
   refreshCanvaBoardUrl,
+  refreshCanvaOAuthToken,
   updateVideoProject,
   updateVideoProjectItem,
 } from "@/lib/api";
 import {
+  CanvaOAuthStatus,
   ExternalBoard,
   VideoProject,
   VideoProjectItem,
@@ -114,11 +117,13 @@ export default function VideoWorkspacePage() {
   const [project, setProject] = useState<VideoProject | null>(null);
   const [items, setItems] = useState<VideoProjectItem[]>([]);
   const [externalBoards, setExternalBoards] = useState<ExternalBoard[]>([]);
+  const [canvaOAuthStatus, setCanvaOAuthStatus] = useState<CanvaOAuthStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [savingScript, setSavingScript] = useState(false);
   const [creatingExternalBoard, setCreatingExternalBoard] = useState(false);
   const [refreshingBoardId, setRefreshingBoardId] = useState<number | null>(null);
+  const [refreshingOAuthToken, setRefreshingOAuthToken] = useState(false);
   const [activeTab, setActiveTab] = useState<PageTab>("roteiro");
   const [libraryFilter, setLibraryFilter] = useState<LibraryFilter>("all");
   const [libraryForm, setLibraryForm] = useState({
@@ -140,6 +145,7 @@ export default function VideoWorkspacePage() {
   });
   const [scriptWordCount, setScriptWordCount] = useState(0);
   const [scriptDuration, setScriptDuration] = useState(0);
+  const canvaConnectUrl = `${process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000"}/canva/oauth/start`;
 
   const fetchProjectWorkspace = async (options?: { silentOptionalErrors?: boolean }) => {
     const { silentOptionalErrors = false } = options ?? {};
@@ -166,6 +172,16 @@ export default function VideoWorkspacePage() {
       setExternalBoards([]);
       if (!silentOptionalErrors) {
         toast.error(error.message || "Nao foi possivel carregar os boards externos.");
+      }
+    }
+
+    try {
+      const oauthStatus = await getCanvaOAuthStatus();
+      setCanvaOAuthStatus(oauthStatus);
+    } catch (error: any) {
+      setCanvaOAuthStatus(null);
+      if (!silentOptionalErrors) {
+        toast.error(error.message || "Nao foi possivel carregar o status de conexao do Canva.");
       }
     }
   };
@@ -398,6 +414,11 @@ export default function VideoWorkspacePage() {
   };
 
   const handleCreateCanvaExternalBoard = async () => {
+    if (!canvaOAuthStatus?.connected) {
+      toast.error("Conecte o Canva antes de criar boards externos.");
+      return;
+    }
+
     try {
       setCreatingExternalBoard(true);
       const createdBoard = await createCanvaBoard(projectId);
@@ -411,6 +432,20 @@ export default function VideoWorkspacePage() {
       toast.error(error.message || "Erro ao criar quadro externo no Canva.");
     } finally {
       setCreatingExternalBoard(false);
+    }
+  };
+
+  const handleRefreshCanvaOAuth = async () => {
+    try {
+      setRefreshingOAuthToken(true);
+      const refreshed = await refreshCanvaOAuthToken();
+      const nextStatus = await getCanvaOAuthStatus();
+      setCanvaOAuthStatus(nextStatus);
+      toast.success(refreshed.message || "Token do Canva renovado.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao renovar token OAuth do Canva.");
+    } finally {
+      setRefreshingOAuthToken(false);
     }
   };
 
@@ -651,22 +686,77 @@ export default function VideoWorkspacePage() {
               <div className="space-y-4">
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
                   <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Canva</div>
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    <span
+                      className={cn(
+                        "rounded-full border px-2.5 py-1 text-xs font-semibold",
+                        canvaOAuthStatus?.connected
+                          ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
+                          : "border-amber-500/30 bg-amber-500/10 text-amber-100"
+                      )}
+                    >
+                      {canvaOAuthStatus?.connected ? "Canva conectado" : "Canva desconectado"}
+                    </span>
+                    {canvaOAuthStatus?.using_dev_token_fallback ? (
+                      <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-semibold text-amber-100">
+                        Token dev fallback
+                      </span>
+                    ) : null}
+                  </div>
                   <p className="mt-3 text-sm leading-relaxed text-slate-300">
                     Crie um board externo do projeto e reabra o link quando precisar continuar a oficina visual.
                   </p>
+                  {canvaOAuthStatus?.message ? (
+                    <p className="mt-3 text-xs leading-relaxed text-slate-400">{canvaOAuthStatus.message}</p>
+                  ) : null}
+                  {canvaOAuthStatus?.expires_at ? (
+                    <p className="mt-2 text-xs text-slate-500">
+                      Token expira em {new Date(canvaOAuthStatus.expires_at).toLocaleString("pt-BR")}
+                    </p>
+                  ) : null}
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <a
+                      href={canvaConnectUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl border border-sky-500/30 bg-sky-500/10 px-4 py-3 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-500/15"
+                    >
+                      <ExternalLink className="h-4 w-4" />
+                      Conectar Canva
+                    </a>
+                    <button
+                      onClick={handleRefreshCanvaOAuth}
+                      disabled={refreshingOAuthToken || !canvaOAuthStatus?.connected || canvaOAuthStatus?.using_dev_token_fallback}
+                      className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {refreshingOAuthToken ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Renovar token
+                    </button>
+                  </div>
                   <button
                     onClick={handleCreateCanvaExternalBoard}
-                    disabled={creatingExternalBoard}
+                    disabled={creatingExternalBoard || !canvaOAuthStatus?.connected}
                     className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
                   >
                     {creatingExternalBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
                     Criar board no Canva
                   </button>
+                  {!canvaOAuthStatus?.connected ? (
+                    <p className="mt-3 text-xs leading-relaxed text-amber-100">
+                      Conecte o Canva antes de criar boards externos.
+                    </p>
+                  ) : null}
                 </div>
 
                 <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-100">
                   Os links do Canva podem ser temporarios. Se um link expirar, use o refresh para gerar uma URL nova antes de abrir novamente.
                 </div>
+
+                {canvaOAuthStatus?.using_dev_token_fallback ? (
+                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-100">
+                    Usando token de desenvolvimento do .env. Este modo nao e recomendado para uso continuo.
+                  </div>
+                ) : null}
 
                 <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-300">
                   <div className="font-semibold text-white">{items.length} elementos na biblioteca</div>

@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import content_items, external_boards, health, ingest, references, search, video_workshop
+from src.api.routes import canva_oauth, content_items, external_boards, health, ingest, references, search, video_workshop
 
 app = FastAPI(
     title="Dark Content Radar API",
@@ -30,3 +30,4 @@ app.include_router(references.reference_import_jobs_router, prefix="/reference-i
 app.include_router(references.transcripts_router, prefix="/transcripts", tags=["Transcripts"])
 app.include_router(video_workshop.router, tags=["Video Workshop"])
 app.include_router(external_boards.router, tags=["External Boards"])
+app.include_router(canva_oauth.router, tags=["Canva OAuth"])

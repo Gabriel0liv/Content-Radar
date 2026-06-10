@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
 
 from src.models.video_workshop import VideoProject, VideoProjectExternalBoard
+from src.services.canva_oauth_service import CanvaOAuthService
 
 
 class ExternalBoardsService:
@@ -25,10 +26,10 @@ class ExternalBoardsService:
         return self.db.query(VideoProjectExternalBoard).filter(VideoProjectExternalBoard.id == board_id).first()
 
     def _get_canva_token(self) -> str:
-        token = (os.getenv("CANVA_ACCESS_TOKEN", "") or "").strip()
-        if not token:
-            raise RuntimeError("Canva não configurado: CANVA_ACCESS_TOKEN ausente")
-        return token
+        try:
+            return CanvaOAuthService(self.db).get_valid_access_token()
+        except RuntimeError as exc:
+            raise RuntimeError(str(exc))
 
     def _get_canva_base_url(self) -> str:
         return (os.getenv("CANVA_BASE_URL") or "https://api.canva.com/rest/v1").strip().rstrip("/")
