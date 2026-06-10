@@ -23,18 +23,22 @@ import "reactflow/dist/style.css";
 import {
   archiveVideoProject,
   createBoardNodeFromItem,
+  createMiroBoard,
   createVideoProjectItem,
   createVideoProjectItemFromScriptExcerpt,
   deleteVideoProject,
   deleteVideoProjectItem,
+  getExternalBoards,
   getVideoProject,
   getVideoProjectBoard,
   getVideoProjectItems,
   saveVideoProjectBoard,
+  syncExternalBoardToMiro,
   updateVideoProject,
   updateVideoProjectItem,
 } from "@/lib/api";
 import {
+  ExternalBoard,
   VideoProject,
   VideoProjectBoardEdge,
   VideoProjectBoardNode,
@@ -47,6 +51,7 @@ import {
   BookOpen,
   CheckSquare,
   Copy,
+  ExternalLink,
   FileImage,
   Film,
   FolderKanban,
@@ -65,7 +70,7 @@ import {
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
-type PageTab = "roteiro" | "quadro" | "elementos";
+type PageTab = "roteiro" | "quadro" | "quadro-externo" | "elementos";
 type LibraryFilter = "all" | VideoProjectItemType;
 
 type WorkshopNodeData = {
@@ -207,10 +212,13 @@ export default function VideoWorkspacePage() {
 
   const [project, setProject] = useState<VideoProject | null>(null);
   const [items, setItems] = useState<VideoProjectItem[]>([]);
+  const [externalBoards, setExternalBoards] = useState<ExternalBoard[]>([]);
   const [loading, setLoading] = useState(true);
   const [pageError, setPageError] = useState<string | null>(null);
   const [savingScript, setSavingScript] = useState(false);
   const [savingBoard, setSavingBoard] = useState(false);
+  const [creatingExternalBoard, setCreatingExternalBoard] = useState(false);
+  const [syncingExternalBoardId, setSyncingExternalBoardId] = useState<number | null>(null);
   const [creatingQuickItem, setCreatingQuickItem] = useState<VideoProjectItemType | null>(null);
   const [activeTab, setActiveTab] = useState<PageTab>("roteiro");
   const [showImportPanel, setShowImportPanel] = useState(false);
@@ -329,6 +337,7 @@ export default function VideoWorkspacePage() {
       setProject(null);
       setPageError(error.message || "Nao foi possivel carregar este projeto de video.");
       setItems([]);
+      setExternalBoards([]);
       setNodes([]);
       setEdges([]);
       syncSelectedNodeDraft(null, []);
@@ -363,6 +372,14 @@ export default function VideoWorkspacePage() {
       setEdges([]);
       syncSelectedNodeDraft(null, []);
       toast.error(error.message || "Nao foi possivel carregar o quadro deste projeto.");
+    }
+
+    try {
+      const externalBoardsResponse = await getExternalBoards(projectId);
+      setExternalBoards(externalBoardsResponse);
+    } catch (error: any) {
+      setExternalBoards([]);
+      toast.error(error.message || "Nao foi possivel carregar os boards externos deste projeto.");
     } finally {
       setLoading(false);
     }
@@ -438,6 +455,35 @@ export default function VideoWorkspacePage() {
       router.push("/scripts");
     } catch (error: any) {
       toast.error(error.message || "Erro ao excluir projeto.");
+    }
+  };
+
+  const handleCreateMiroBoard = async () => {
+    try {
+      setCreatingExternalBoard(true);
+      const createdBoard = await createMiroBoard(projectId);
+      setExternalBoards((current) => [createdBoard, ...current.filter((board) => board.id !== createdBoard.id)]);
+      setActiveTab("quadro-externo");
+      toast.success("Board criado no Miro.");
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao criar board no Miro.");
+    } finally {
+      setCreatingExternalBoard(false);
+    }
+  };
+
+  const handleSyncExternalBoard = async (board: ExternalBoard) => {
+    try {
+      setSyncingExternalBoardId(board.id);
+      const response = await syncExternalBoardToMiro(projectId, board.id);
+      setExternalBoards((current) =>
+        current.map((entry) => (entry.id === response.board.id ? response.board : entry))
+      );
+      toast.success(`${response.pushed_item_count} elemento(s) enviados para o Miro.`);
+    } catch (error: any) {
+      toast.error(error.message || "Erro ao sincronizar board no Miro.");
+    } finally {
+      setSyncingExternalBoardId(null);
     }
   };
 
@@ -866,6 +912,7 @@ export default function VideoWorkspacePage() {
             {([
               { id: "roteiro", label: "Roteiro", icon: BookOpen },
               { id: "quadro", label: "Quadro", icon: Sparkles },
+              { id: "quadro-externo", label: "Quadro externo", icon: ExternalLink },
               { id: "elementos", label: "Biblioteca", icon: FolderKanban },
             ] as const).map((tab) => {
               const Icon = tab.icon;
@@ -1225,6 +1272,130 @@ export default function VideoWorkspacePage() {
                   </Panel>
                 ) : null}
               </ReactFlow>
+            </div>
+          </div>
+        ) : null}
+
+        {activeTab === "quadro-externo" ? (
+          <div className="grid gap-6 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
+              <div className="mb-4">
+                <div className="text-sm font-semibold text-white">Board visual externo</div>
+                <div className="text-xs text-slate-500">
+                  Use o Miro como quadro visual principal. O canvas interno continua como fallback local.
+                </div>
+              </div>
+
+              <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+                <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Miro</div>
+                <p className="mt-3 text-sm leading-relaxed text-slate-300">
+                  Cria um board real para a ideia de video e permite sincronizar biblioteca, resumo do projeto e roteiro.
+                </p>
+                <button
+                  onClick={handleCreateMiroBoard}
+                  disabled={creatingExternalBoard}
+                  className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                >
+                  {creatingExternalBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+                  Criar board no Miro
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              {externalBoards.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-6 py-16 text-center">
+                  <div className="text-lg font-semibold text-white">Nenhum board externo associado</div>
+                  <p className="mt-2 text-sm text-slate-500">
+                    Crie um board no Miro para usar um quadro visual real sem evoluir mais o canvas local nesta etapa.
+                  </p>
+                </div>
+              ) : (
+                externalBoards.map((board) => {
+                  const lastSyncAt = typeof board.metadata_json?.last_sync_at === "string"
+                    ? board.metadata_json.last_sync_at
+                    : null;
+                  const lastSyncSummary = board.metadata_json?.last_sync_summary;
+                  return (
+                    <div
+                      key={board.id}
+                      className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-6 shadow-xl shadow-slate-950/20"
+                    >
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="space-y-2">
+                          <div className="inline-flex rounded-full border border-sky-500/30 bg-sky-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-sky-100">
+                            {board.provider}
+                          </div>
+                          <div className="text-xl font-semibold text-white">
+                            {board.title || `Board ${board.external_id}`}
+                          </div>
+                          <div className="text-sm text-slate-400">
+                            Criado em {new Date(board.created_at).toLocaleString("pt-BR")}
+                          </div>
+                          {lastSyncAt ? (
+                            <div className="text-sm text-slate-400">
+                              Ultimo sync: {new Date(lastSyncAt).toLocaleString("pt-BR")}
+                            </div>
+                          ) : (
+                            <div className="text-sm text-slate-500">
+                              Ainda sem sync manual para o Miro.
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex flex-wrap items-center gap-2">
+                          {board.view_url || board.edit_url ? (
+                            <a
+                              href={board.edit_url || board.view_url || "#"}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-500/15"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                              Abrir no Miro
+                            </a>
+                          ) : null}
+                          <button
+                            onClick={() => handleSyncExternalBoard(board)}
+                            disabled={syncingExternalBoardId === board.id}
+                            className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+                          >
+                            {syncingExternalBoardId === board.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Save className="h-4 w-4" />
+                            )}
+                            Sincronizar elementos para Miro
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 grid gap-4 md:grid-cols-3">
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Board ID</div>
+                          <div className="mt-2 break-all text-sm text-slate-200">{board.external_id}</div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Biblioteca atual</div>
+                          <div className="mt-2 text-2xl font-semibold text-white">{items.length}</div>
+                          <div className="text-xs text-slate-500">elementos disponiveis para sync</div>
+                        </div>
+                        <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
+                          <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Ultimo envio</div>
+                          <div className="mt-2 text-2xl font-semibold text-white">
+                            {typeof lastSyncSummary?.pushed_item_count === "number" ? lastSyncSummary.pushed_item_count : 0}
+                          </div>
+                          <div className="text-xs text-slate-500">cards criados no ultimo push</div>
+                        </div>
+                      </div>
+
+                      <div className="mt-5 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-4 text-sm leading-relaxed text-amber-100">
+                        O sync atual e manual e pode duplicar itens se executado mais de uma vez. O Dark Content Radar continua sendo a fonte dos elementos e do roteiro.
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
         ) : null}

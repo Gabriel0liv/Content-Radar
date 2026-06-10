@@ -51,8 +51,13 @@ def upgrade() -> None:
     if "item_id" not in board_node_columns:
         op.add_column("video_project_board_nodes", sa.Column("item_id", sa.BigInteger(), nullable=True))
 
-    board_node_fks = {fk["name"] for fk in inspector.get_foreign_keys("video_project_board_nodes")}
-    if "fk_video_project_board_nodes_item_id_video_project_items" not in board_node_fks:
+    board_node_fks = inspector.get_foreign_keys("video_project_board_nodes")
+    has_item_fk = any(
+        fk.get("referred_table") == "video_project_items"
+        and "item_id" in (fk.get("constrained_columns") or [])
+        for fk in board_node_fks
+    )
+    if not has_item_fk:
         op.create_foreign_key(
             "fk_video_project_board_nodes_item_id_video_project_items",
             "video_project_board_nodes",
@@ -68,10 +73,19 @@ def downgrade() -> None:
     inspector = sa.inspect(bind)
 
     if "video_project_board_nodes" in inspector.get_table_names():
-        board_node_fks = {fk["name"] for fk in inspector.get_foreign_keys("video_project_board_nodes")}
-        if "fk_video_project_board_nodes_item_id_video_project_items" in board_node_fks:
+        board_node_fks = inspector.get_foreign_keys("video_project_board_nodes")
+        named_fk = next(
+            (
+                fk.get("name")
+                for fk in board_node_fks
+                if fk.get("referred_table") == "video_project_items"
+                and "item_id" in (fk.get("constrained_columns") or [])
+            ),
+            None,
+        )
+        if named_fk:
             op.drop_constraint(
-                "fk_video_project_board_nodes_item_id_video_project_items",
+                named_fk,
                 "video_project_board_nodes",
                 type_="foreignkey",
             )

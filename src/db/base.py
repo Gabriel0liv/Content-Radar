@@ -8,7 +8,8 @@ from src.models.video_workshop import (
     VideoProjectNote,
     VideoProjectReference,
     VideoProjectAudioIdea,
+    VideoProjectItem,
     VideoProjectBoardNode,
-    VideoProjectBoardEdge
+    VideoProjectBoardEdge,
+    VideoProjectExternalBoard,
 )  # noqa
-

@@ -33,6 +33,7 @@ class VideoProject(Base):
     board_nodes = relationship("VideoProjectBoardNode", back_populates="video_project", cascade="all, delete-orphan")
     board_edges = relationship("VideoProjectBoardEdge", back_populates="video_project", cascade="all, delete-orphan")
     items = relationship("VideoProjectItem", back_populates="video_project", cascade="all, delete-orphan")
+    external_boards = relationship("VideoProjectExternalBoard", back_populates="video_project", cascade="all, delete-orphan")
 
     __table_args__ = (
         CheckConstraint(
@@ -204,4 +205,28 @@ class VideoProjectBoardEdge(Base):
         Index("idx_video_project_board_edges_project_id", video_project_id),
         Index("idx_video_project_board_edges_source", source_node_key),
         Index("idx_video_project_board_edges_target", target_node_key),
+    )
+
+
+class VideoProjectExternalBoard(Base):
+    __tablename__ = "video_project_external_boards"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    video_project_id = Column(BigInteger, ForeignKey("video_projects.id", ondelete="CASCADE"), nullable=False)
+    provider = Column(Text, nullable=False)
+    external_id = Column(Text, nullable=False)
+    title = Column(Text, nullable=True)
+    view_url = Column(Text, nullable=True)
+    edit_url = Column(Text, nullable=True)
+    metadata_json = Column(JSONB, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    video_project = relationship("VideoProject", back_populates="external_boards")
+
+    __table_args__ = (
+        UniqueConstraint("provider", "external_id", name="uq_video_project_external_boards_provider_external_id"),
+        CheckConstraint("provider IN ('miro', 'canva')", name="check_video_project_external_boards_provider"),
+        Index("idx_video_project_external_boards_project_id", video_project_id),
+        Index("idx_video_project_external_boards_provider", provider),
     )

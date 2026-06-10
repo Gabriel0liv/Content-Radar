@@ -285,3 +285,35 @@ class VideoProjectBoardStateRead(BaseModel):
 class VideoProjectBoardStateUpsert(BaseModel):
     nodes: List[VideoProjectBoardNodeCreate] = []
     edges: List[VideoProjectBoardEdgeCreate] = []
+
+
+# ─── External Boards ─────────────────────────────────────────────────────────
+
+class ExternalBoardCreateRequest(BaseModel):
+    provider: Optional[str] = "miro"
+
+
+class ExternalBoardRead(BaseModel):
+    id: int
+    video_project_id: int
+    provider: str
+    external_id: str
+    title: Optional[str] = None
+    view_url: Optional[str] = None
+    edit_url: Optional[str] = None
+    metadata_json: Optional[Dict[str, Any]] = None
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class ExternalBoardSyncResponse(BaseModel):
+    board: ExternalBoardRead
+    provider: str
+    pushed_item_count: int
+    sections_count: int
+    duplicated_warning: bool = True
+    synced_at: datetime
+    message: str
