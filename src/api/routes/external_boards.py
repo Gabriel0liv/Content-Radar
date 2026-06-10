@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
@@ -40,6 +41,24 @@ def refresh_canva_url(id: int, db: Session = Depends(get_db)):
     except ValueError as exc:
         detail = str(exc)
         if detail == "Refresh de URL suportado apenas para boards Canva":
+            raise HTTPException(status_code=400, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
+    except RuntimeError as exc:
+        detail = str(exc)
+        if detail.startswith("Canva não configurado"):
+            raise HTTPException(status_code=400, detail=detail)
+        raise HTTPException(status_code=502, detail=detail)
+
+
+@router.get("/external-boards/{id}/open-canva")
+def open_canva_board(id: int, db: Session = Depends(get_db)):
+    service = ExternalBoardsService(db)
+    try:
+        open_url = service.get_canva_open_url(id)
+        return RedirectResponse(url=open_url, status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+    except ValueError as exc:
+        detail = str(exc)
+        if detail == "Abertura direta suportada apenas para boards Canva":
             raise HTTPException(status_code=400, detail=detail)
         raise HTTPException(status_code=404, detail=detail)
     except RuntimeError as exc:

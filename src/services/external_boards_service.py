@@ -229,6 +229,19 @@ class ExternalBoardsService:
             self._touch_project(project)
         return external_board
 
+    def get_canva_open_url(self, external_board_id: int) -> str:
+        external_board = self._get_external_board(external_board_id)
+        if not external_board:
+            raise ValueError("Board externo não encontrado")
+        if external_board.provider != "canva":
+            raise ValueError("Abertura direta suportada apenas para boards Canva")
+        external_board = self.refresh_canva_design_urls(external_board_id)
+
+        open_url = external_board.edit_url or external_board.view_url
+        if not open_url:
+            raise RuntimeError("Canva não retornou uma URL de acesso para este board")
+        return open_url
+
     def delete_external_board(self, external_board_id: int) -> bool:
         external_board = self._get_external_board(external_board_id)
         if not external_board:

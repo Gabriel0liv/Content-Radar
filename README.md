@@ -288,6 +288,9 @@ Observações:
 * O backend renova automaticamente o access token usando o refresh token quando necessário.
 * Se o refresh falhar, o utilizador deve reconectar o Canva.
 * Os links de visualização e edição podem ser temporários; use o refresh de URL no app quando expirarem.
+* A UI do workshop abre o board existente via `GET /external-boards/{id}/open-canva`, evitando expor URLs gigantes do Canva no frontend.
+* O Dark Content continua como fonte principal de roteiro, notas e biblioteca; o Canva é tratado como organização visual externa.
+* Não há sincronização bidirecional completa com whiteboards livres do Canva nesta etapa. Para apoio rápido, use o botão de copiar pacote/resumo do projeto.
 * Designs em branco no Canva são esperados nesta fase do fluxo.
 
 
@@ -353,4 +356,3 @@ Este novo módulo permite adicionar referências analíticas importando dados de
 
 > [!CAUTION]
 > **Nota Legal de Uso**: As transcrições e metadados extraídos pelo portal destinam-se exclusivamente a análises de engajamento, triagem editorial e inspiração original para criação de roteiros próprios. O sistema não deve ser utilizado para plágio ou cópia não autorizada de conteúdos protegidos por direitos autorais de terceiros.
-

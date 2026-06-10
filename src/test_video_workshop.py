@@ -573,6 +573,36 @@ def test_canva_oauth_status_route_and_external_board_token_usage():
     print("✓ test_canva_oauth_status_route_and_external_board_token_usage passed")
 
 
+def test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow():
+    print("\nRunning test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow...")
+    db = SessionLocal()
+    reset_canva_oauth_tables(db)
+    external_id = f"redirect-{int(time.time() * 1000)}"
+    project = VideoWorkshopService(db).create_video_project(
+        VideoProjectCreate(title="Open Canva Redirect", status="idea", priority=0)
+    )
+    board = create_mock_canva_board(ExternalBoardsService(db), project.id, external_id=external_id)
+    board_id = board.id
+    db.close()
+
+    client = TestClient(app)
+
+    with patch(
+        "src.api.routes.external_boards.ExternalBoardsService.get_canva_open_url",
+        return_value=f"https://www.canva.com/design/{external_id}/edit?token=fresh",
+    ):
+        response = client.get(f"/external-boards/{board_id}/open-canva", follow_redirects=False)
+
+    assert response.status_code == 307, response.text
+    assert response.headers["location"].startswith(f"https://www.canva.com/design/{external_id}/edit")
+
+    cleanup_db = SessionLocal()
+    cleanup_db.query(VideoProject).filter(VideoProject.id == project.id).delete()
+    cleanup_db.commit()
+    cleanup_db.close()
+    print("✓ test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow passed")
+
+
 if __name__ == "__main__":
     try:
         test_tiptap_word_count()
@@ -583,6 +613,7 @@ if __name__ == "__main__":
         test_canva_oauth_start_authorization_and_callback_and_refresh()
         test_canva_oauth_valid_access_token_fallback_and_auto_refresh()
         test_canva_oauth_status_route_and_external_board_token_usage()
+        test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow()
         print("\nAll video workshop tests passed successfully!")
     except AssertionError as e:
         print(f"\nAssertion error: {e}")
