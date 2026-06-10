@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import func
-from typing import List, Optional, Tuple, Dict, Any
+from typing import List, Optional
 from datetime import datetime, timezone
 
 from src.models.video_workshop import (
@@ -9,8 +9,6 @@ from src.models.video_workshop import (
     VideoProjectReference,
     VideoProjectAudioIdea,
     VideoProjectItem,
-    VideoProjectBoardNode,
-    VideoProjectBoardEdge
 )
 from src.schemas.video_workshop import (
     VideoProjectCreate,
@@ -21,9 +19,6 @@ from src.schemas.video_workshop import (
     VideoProjectAudioIdeaCreate,
     VideoProjectItemCreate,
     VideoProjectItemUpdate,
-    VideoProjectBoardNodeCreate,
-    VideoProjectBoardNodeUpdate,
-    VideoProjectBoardEdgeCreate
 )
 
 class VideoWorkshopRepository:
@@ -284,148 +279,3 @@ class VideoWorkshopRepository:
             pinned=False
         )
         return self.create_item(project_id, item_in)
-
-    def create_board_node_from_item(
-        self,
-        project_id: int,
-        item_id: int,
-        x: float = 200.0,
-        y: float = 200.0,
-        width: Optional[float] = 200.0,
-        height: Optional[float] = 100.0
-    ) -> Optional[VideoProjectBoardNode]:
-        db_item = self.get_item_by_id(item_id)
-        if not db_item or db_item.video_project_id != project_id:
-            return None
-
-        node_key = f"item-{item_id}-{int(datetime.now(timezone.utc).timestamp() * 1000)}"
-        node_in = VideoProjectBoardNodeCreate(
-            node_key=node_key,
-            node_type=db_item.item_type,
-            item_id=item_id,
-            title=db_item.title,
-            body=db_item.body,
-            x=x,
-            y=y,
-            width=width,
-            height=height
-        )
-        return self.create_board_node(project_id, node_in)
-
-    # ── Board Nodes CRUD ─────────────────────────────────────────────────────
-
-    def get_board_node_by_id(self, node_id: int) -> Optional[VideoProjectBoardNode]:
-        return self.db.query(VideoProjectBoardNode).filter(VideoProjectBoardNode.id == node_id).first()
-
-    def list_board_nodes_by_project(self, project_id: int) -> List[VideoProjectBoardNode]:
-        return self.db.query(VideoProjectBoardNode).filter(
-            VideoProjectBoardNode.video_project_id == project_id
-        ).all()
-
-    def create_board_node(self, project_id: int, node_in: VideoProjectBoardNodeCreate) -> VideoProjectBoardNode:
-        node_data = node_in.model_dump()
-        node_data["video_project_id"] = project_id
-        db_node = VideoProjectBoardNode(**node_data)
-        self.db.add(db_node)
-        self.db.commit()
-        self.db.refresh(db_node)
-        self.touch_video_project(project_id)
-        return db_node
-
-    def update_board_node(self, node_id: int, node_in: VideoProjectBoardNodeUpdate) -> Optional[VideoProjectBoardNode]:
-        db_node = self.get_board_node_by_id(node_id)
-        if not db_node:
-            return None
-
-        update_data = node_in.model_dump(exclude_unset=True)
-        for key, value in update_data.items():
-            setattr(db_node, key, value)
-
-        db_node.updated_at = datetime.now(timezone.utc)
-        self.db.commit()
-        self.db.refresh(db_node)
-        self.touch_video_project(db_node.video_project_id)
-        return db_node
-
-    def delete_board_node(self, node_id: int) -> bool:
-        db_node = self.get_board_node_by_id(node_id)
-        if not db_node:
-            return False
-        # Cascade delete edges that reference this node
-        self.db.query(VideoProjectBoardEdge).filter(
-            (VideoProjectBoardEdge.source_node_key == db_node.node_key) |
-            (VideoProjectBoardEdge.target_node_key == db_node.node_key)
-        ).delete(synchronize_session=False)
-        self.db.delete(db_node)
-        self.db.commit()
-        self.touch_video_project(db_node.video_project_id)
-        return True
-
-    # ── Board Edges CRUD ─────────────────────────────────────────────────────
-
-    def get_board_edge_by_id(self, edge_id: int) -> Optional[VideoProjectBoardEdge]:
-        return self.db.query(VideoProjectBoardEdge).filter(VideoProjectBoardEdge.id == edge_id).first()
-
-    def list_board_edges_by_project(self, project_id: int) -> List[VideoProjectBoardEdge]:
-        return self.db.query(VideoProjectBoardEdge).filter(
-            VideoProjectBoardEdge.video_project_id == project_id
-        ).all()
-
-    def create_board_edge(self, project_id: int, edge_in: VideoProjectBoardEdgeCreate) -> VideoProjectBoardEdge:
-        edge_data = edge_in.model_dump()
-        edge_data["video_project_id"] = project_id
-        db_edge = VideoProjectBoardEdge(**edge_data)
-        self.db.add(db_edge)
-        self.db.commit()
-        self.db.refresh(db_edge)
-        self.touch_video_project(project_id)
-        return db_edge
-
-    def delete_board_edge(self, edge_id: int) -> bool:
-        db_edge = self.get_board_edge_by_id(edge_id)
-        if not db_edge:
-            return False
-        self.db.delete(db_edge)
-        self.db.commit()
-        self.touch_video_project(db_edge.video_project_id)
-        return True
-
-    # ── Full Board State Sync ────────────────────────────────────────────────
-
-    def sync_board_state(
-        self,
-        project_id: int,
-        nodes_in: List[VideoProjectBoardNodeCreate],
-        edges_in: List[VideoProjectBoardEdgeCreate]
-    ) -> Tuple[List[VideoProjectBoardNode], List[VideoProjectBoardEdge]]:
-        # Delete existing
-        self.db.query(VideoProjectBoardEdge).filter(VideoProjectBoardEdge.video_project_id == project_id).delete()
-        self.db.query(VideoProjectBoardNode).filter(VideoProjectBoardNode.video_project_id == project_id).delete()
-
-        # Insert new nodes
-        nodes = []
-        for n_in in nodes_in:
-            n_data = n_in.model_dump()
-            n_data["video_project_id"] = project_id
-            db_n = VideoProjectBoardNode(**n_data)
-            self.db.add(db_n)
-            nodes.append(db_n)
-
-        # Insert new edges
-        edges = []
-        for e_in in edges_in:
-            e_data = e_in.model_dump()
-            e_data["video_project_id"] = project_id
-            db_e = VideoProjectBoardEdge(**e_data)
-            self.db.add(db_e)
-            edges.append(db_e)
-
-        self.db.commit()
-        self.touch_video_project(project_id)
-
-        for n in nodes:
-            self.db.refresh(n)
-        for e in edges:
-            self.db.refresh(e)
-
-        return nodes, edges

@@ -1,6 +1,5 @@
 from sqlalchemy.orm import Session
-from typing import List, Optional, Tuple, Dict, Any
-from datetime import datetime, timezone
+from typing import List, Optional, Tuple, Any
 
 from src.repositories.video_workshop_repository import VideoWorkshopRepository
 from src.models.video_workshop import (
@@ -9,8 +8,6 @@ from src.models.video_workshop import (
     VideoProjectReference,
     VideoProjectAudioIdea,
     VideoProjectItem,
-    VideoProjectBoardNode,
-    VideoProjectBoardEdge
 )
 from src.schemas.video_workshop import (
     VideoProjectCreate,
@@ -22,10 +19,6 @@ from src.schemas.video_workshop import (
     VideoProjectItemCreate,
     VideoProjectItemUpdate,
     VideoProjectItemFromScriptExcerpt,
-    VideoProjectBoardNodeCreate,
-    VideoProjectBoardNodeUpdate,
-    VideoProjectBoardEdgeCreate,
-    VideoProjectBoardStateRead
 )
 
 def extract_text_from_tiptap_json(node: Any) -> str:
@@ -173,48 +166,3 @@ class VideoWorkshopService:
         self, project_id: int, payload: VideoProjectItemFromScriptExcerpt
     ) -> VideoProjectItem:
         return self.repo.create_item_from_script_excerpt(project_id, payload.text, payload.title)
-
-    def create_board_node_from_item(
-        self,
-        project_id: int,
-        item_id: int,
-        x: float = 200.0,
-        y: float = 200.0,
-        width: Optional[float] = 200.0,
-        height: Optional[float] = 100.0
-    ) -> Optional[VideoProjectBoardNode]:
-        node = self.repo.create_board_node_from_item(project_id, item_id, x=x, y=y, width=width, height=height)
-        if node:
-            self.repo.touch_video_project(project_id)
-        return node
-
-    # ── Board State ──────────────────────────────────────────────────────────
-
-    def get_board_state_for_project(self, project_id: int) -> Dict[str, Any]:
-        nodes = self.repo.list_board_nodes_by_project(project_id)
-        edges = self.repo.list_board_edges_by_project(project_id)
-        return {"nodes": nodes, "edges": edges}
-
-    def save_board_state_for_project(
-        self,
-        project_id: int,
-        nodes_in: List[VideoProjectBoardNodeCreate],
-        edges_in: List[VideoProjectBoardEdgeCreate]
-    ) -> Dict[str, Any]:
-        nodes, edges = self.repo.sync_board_state(project_id, nodes_in, edges_in)
-        return {"nodes": nodes, "edges": edges}
-
-    def create_board_node_for_project(self, project_id: int, node_in: VideoProjectBoardNodeCreate) -> VideoProjectBoardNode:
-        return self.repo.create_board_node(project_id, node_in)
-
-    def update_board_node(self, node_id: int, node_in: VideoProjectBoardNodeUpdate) -> Optional[VideoProjectBoardNode]:
-        return self.repo.update_board_node(node_id, node_in)
-
-    def delete_board_node(self, node_id: int) -> bool:
-        return self.repo.delete_board_node(node_id)
-
-    def create_board_edge_for_project(self, project_id: int, edge_in: VideoProjectBoardEdgeCreate) -> VideoProjectBoardEdge:
-        return self.repo.create_board_edge(project_id, edge_in)
-
-    def delete_board_edge(self, edge_id: int) -> bool:
-        return self.repo.delete_board_edge(edge_id)

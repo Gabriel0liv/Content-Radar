@@ -4,20 +4,9 @@ from typing import Any, Dict, List, Optional
 
 import requests
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import IntegrityError
 
-from src.models.video_workshop import VideoProject, VideoProjectExternalBoard, VideoProjectItem
-
-
-MIRO_BASE_URL = "https://api.miro.com/v2"
-SUPPORTED_SYNC_TYPES = [
-    "note",
-    "reference",
-    "script_excerpt",
-    "audio",
-    "thumbnail",
-    "todo",
-    "production",
-]
+from src.models.video_workshop import VideoProject, VideoProjectExternalBoard
 
 
 class ExternalBoardsService:
@@ -35,32 +24,80 @@ class ExternalBoardsService:
     def _get_external_board(self, board_id: int) -> Optional[VideoProjectExternalBoard]:
         return self.db.query(VideoProjectExternalBoard).filter(VideoProjectExternalBoard.id == board_id).first()
 
-    def _get_miro_token(self) -> str:
-        token = (os.getenv("MIRO_ACCESS_TOKEN", "") or "").strip()
+    def _get_canva_token(self) -> str:
+        token = (os.getenv("CANVA_ACCESS_TOKEN", "") or "").strip()
         if not token:
-            raise RuntimeError("Miro não configurado")
+            raise RuntimeError("Canva não configurado: CANVA_ACCESS_TOKEN ausente")
         return token
 
+    def _get_canva_base_url(self) -> str:
+        base_url = (os.getenv("CANVA_BASE_URL", "") or "").strip().rstrip("/")
+        if not base_url:
+            raise RuntimeError("Canva não configurado: CANVA_BASE_URL ausente")
+        return base_url
+
+    def _extract_design_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        design = payload.get("design")
+        if isinstance(design, dict):
+            return design
+        return payload
+
     def _extract_board_links(self, payload: Dict[str, Any]) -> Dict[str, Optional[str]]:
-        links = payload.get("links") if isinstance(payload.get("links"), dict) else {}
-        self_link = links.get("self")
+        design_payload = self._extract_design_payload(payload)
+        links = design_payload.get("links") if isinstance(design_payload.get("links"), dict) else {}
+        urls = design_payload.get("urls") if isinstance(design_payload.get("urls"), dict) else {}
+        self_link = links.get("self") or urls.get("self")
         self_href = self_link.get("href") if isinstance(self_link, dict) else self_link
+        edit_link = links.get("edit") or urls.get("edit")
+        view_link = links.get("view") or urls.get("view")
+        edit_href = edit_link.get("href") if isinstance(edit_link, dict) else edit_link
+        view_href = view_link.get("href") if isinstance(view_link, dict) else view_link
         return {
-            "view_url": payload.get("viewLink") or payload.get("view_url") or self_href,
-            "edit_url": payload.get("editLink") or payload.get("edit_url") or self_href,
+            "view_url": (
+                design_payload.get("viewLink")
+                or design_payload.get("view_url")
+                or design_payload.get("viewUrl")
+                or urls.get("view_url")
+                or view_href
+                or self_href
+            ),
+            "edit_url": (
+                design_payload.get("editLink")
+                or design_payload.get("edit_url")
+                or design_payload.get("editUrl")
+                or design_payload.get("url")
+                or urls.get("edit_url")
+                or edit_href
+                or self_href
+            ),
         }
 
-    def _miro_headers(self) -> Dict[str, str]:
+    def _extract_external_id(self, payload: Dict[str, Any]) -> Optional[str]:
+        design_payload = self._extract_design_payload(payload)
+        direct_candidates = [
+            design_payload.get("id"),
+            design_payload.get("design_id"),
+            design_payload.get("designId"),
+            design_payload.get("external_id"),
+            design_payload.get("externalId"),
+        ]
+        for candidate in direct_candidates:
+            if candidate:
+                return str(candidate)
+        return None
+
+    def _canva_headers(self) -> Dict[str, str]:
         return {
-            "Authorization": f"Bearer {self._get_miro_token()}",
+            "Authorization": f"Bearer {self._get_canva_token()}",
             "Content-Type": "application/json",
             "Accept": "application/json",
         }
 
-    def _miro_post(self, path: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-        response = requests.post(
-            f"{MIRO_BASE_URL}{path}",
-            headers=self._miro_headers(),
+    def _canva_request(self, method: str, path: str, payload: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        response = requests.request(
+            method=method,
+            url=f"{self._get_canva_base_url()}{path}",
+            headers=self._canva_headers(),
             json=payload,
             timeout=30,
         )
@@ -70,10 +107,67 @@ class ExternalBoardsService:
                 message = error_payload.get("message") or error_payload.get("type") or response.text
             except ValueError:
                 message = response.text
-            raise RuntimeError(f"Erro ao chamar Miro: {message}")
-        return response.json()
+            raise RuntimeError(f"Erro ao chamar Canva: {message}")
+        if not response.content:
+            return {}
+        try:
+            return response.json()
+        except ValueError:
+            return {}
+
+    def _upsert_external_board(
+        self,
+        project: VideoProject,
+        provider: str,
+        external_id: str,
+        title: Optional[str],
+        view_url: Optional[str],
+        edit_url: Optional[str],
+        metadata_json: Optional[Dict[str, Any]],
+    ) -> VideoProjectExternalBoard:
+        existing = (
+            self.db.query(VideoProjectExternalBoard)
+            .filter(
+                VideoProjectExternalBoard.provider == provider,
+                VideoProjectExternalBoard.external_id == external_id,
+            )
+            .first()
+        )
+        if existing:
+            existing.video_project_id = project.id
+            existing.title = title or existing.title
+            existing.view_url = view_url or existing.view_url
+            existing.edit_url = edit_url or existing.edit_url
+            existing.metadata_json = metadata_json or existing.metadata_json
+            existing.updated_at = datetime.now(timezone.utc)
+            self.db.commit()
+            self.db.refresh(existing)
+            self._touch_project(project)
+            return existing
+
+        external_board = VideoProjectExternalBoard(
+            video_project_id=project.id,
+            provider=provider,
+            external_id=external_id,
+            title=title,
+            view_url=view_url,
+            edit_url=edit_url,
+            metadata_json=metadata_json,
+        )
+        self.db.add(external_board)
+        try:
+            self.db.commit()
+        except IntegrityError:
+            self.db.rollback()
+            raise RuntimeError("Conflito ao salvar o board externo no banco")
+        self.db.refresh(external_board)
+        self._touch_project(project)
+        return external_board
 
     def get_external_boards_for_project(self, project_id: int) -> List[VideoProjectExternalBoard]:
+        project = self._get_project(project_id)
+        if not project:
+            raise ValueError("Projeto de vídeo não encontrado")
         return (
             self.db.query(VideoProjectExternalBoard)
             .filter(VideoProjectExternalBoard.video_project_id == project_id)
@@ -81,164 +175,61 @@ class ExternalBoardsService:
             .all()
         )
 
-    def create_miro_board_for_project(self, project_id: int) -> VideoProjectExternalBoard:
+    def create_canva_board_for_project(self, project_id: int) -> VideoProjectExternalBoard:
         project = self._get_project(project_id)
         if not project:
             raise ValueError("Projeto de vídeo não encontrado")
 
-        payload: Dict[str, Any] = {
-            "name": project.title[:60] if project.title else "Untitled",
-            "description": (project.description or "")[:300],
+        payload = {
+            "type": "type_and_asset",
+            "design_type": {
+                "type": "preset",
+                "name": "whiteboard",
+            },
+            "title": project.title or "Untitled",
         }
-        team_id = (os.getenv("MIRO_TEAM_ID", "") or "").strip()
-        if team_id:
-            payload["policy"] = {"teamId": team_id}
-
-        board_response = self._miro_post("/boards", payload)
+        board_response = self._canva_request("POST", "/designs", payload)
+        external_id = self._extract_external_id(board_response)
+        if not external_id:
+            raise RuntimeError("Resposta do Canva sem identificador do design")
         links = self._extract_board_links(board_response)
-
-        external_board = VideoProjectExternalBoard(
-            video_project_id=project.id,
-            provider="miro",
-            external_id=str(board_response.get("id")),
-            title=board_response.get("name") or project.title,
+        design_payload = self._extract_design_payload(board_response)
+        return self._upsert_external_board(
+            project=project,
+            provider="canva",
+            external_id=external_id,
+            title=design_payload.get("title") or project.title,
             view_url=links["view_url"],
             edit_url=links["edit_url"],
-            metadata_json=board_response,
-        )
-        self.db.add(external_board)
-        self.db.commit()
-        self.db.refresh(external_board)
-        self._touch_project(project)
-        return external_board
-
-    def create_miro_sticky_note(self, board_id: str, title: Optional[str], body: Optional[str], x: float, y: float) -> Dict[str, Any]:
-        content_parts = [part for part in [title, body] if part]
-        content = "<br/>".join(content_parts) if content_parts else "Sem conteúdo"
-        payload = {
-            "data": {"content": content},
-            "style": {"fillColor": "light_yellow"},
-            "position": {"origin": "center", "x": x, "y": y},
-            "geometry": {"width": 220},
-        }
-        return self._miro_post(f"/boards/{board_id}/sticky_notes", payload)
-
-    def create_miro_shape(self, board_id: str, title: Optional[str], body: Optional[str], x: float, y: float) -> Dict[str, Any]:
-        content_parts = [part for part in [title, body] if part]
-        content = "<br/>".join(content_parts) if content_parts else "Sem conteúdo"
-        payload = {
-            "data": {"shape": "round_rectangle", "content": content},
-            "style": {"fillColor": "light_blue"},
-            "position": {"origin": "center", "x": x, "y": y},
-            "geometry": {"width": 280, "height": 120},
-        }
-        return self._miro_post(f"/boards/{board_id}/shapes", payload)
-
-    def sync_project_items_to_miro(self, project_id: int, board_id: int) -> Dict[str, Any]:
-        project = self._get_project(project_id)
-        if not project:
-            raise ValueError("Projeto de vídeo não encontrado")
-
-        external_board = self._get_external_board(board_id)
-        if not external_board or external_board.video_project_id != project_id:
-            raise ValueError("Board externo não encontrado para este projeto")
-        if external_board.provider != "miro":
-            raise ValueError("Sync suportado apenas para boards Miro neste momento")
-
-        pushed_count = 0
-        section_count = 0
-        x_origin = -1200
-        y_origin = -500
-        column_gap = 420
-        row_gap = 180
-
-        self.create_miro_shape(external_board.external_id, project.title, project.description or "Projeto de vídeo", x_origin, y_origin)
-        pushed_count += 1
-
-        if project.script_text and project.script_text.strip():
-            excerpt = project.script_text.strip()[:900]
-            self.create_miro_sticky_note(external_board.external_id, "Roteiro / Gancho", excerpt, x_origin, y_origin + row_gap)
-            pushed_count += 1
-
-        items = (
-            self.db.query(VideoProjectItem)
-            .filter(
-                VideoProjectItem.video_project_id == project_id,
-                VideoProjectItem.item_type.in_(SUPPORTED_SYNC_TYPES),
-            )
-            .order_by(VideoProjectItem.pinned.desc(), VideoProjectItem.updated_at.desc())
-            .all()
+            metadata_json=design_payload,
         )
 
-        grouped_items: Dict[str, List[VideoProjectItem]] = {}
-        for item in items:
-            grouped_items.setdefault(item.item_type, []).append(item)
+    def refresh_canva_design_urls(self, external_board_id: int) -> VideoProjectExternalBoard:
+        external_board = self._get_external_board(external_board_id)
+        if not external_board:
+            raise ValueError("Board externo não encontrado")
+        if external_board.provider != "canva":
+            raise ValueError("Refresh de URL suportado apenas para boards Canva")
 
-        current_x = x_origin + column_gap
-        for item_type in SUPPORTED_SYNC_TYPES:
-            bucket = grouped_items.get(item_type, [])
-            if not bucket:
-                continue
+        project = external_board.video_project
+        response = self._canva_request("GET", f"/designs/{external_board.external_id}")
+        links = self._extract_board_links(response)
+        design_payload = self._extract_design_payload(response)
 
-            section_count += 1
-            self.create_miro_shape(
-                external_board.external_id,
-                item_type.replace("_", " ").title(),
-                f"{len(bucket)} elemento(s)",
-                current_x,
-                y_origin,
-            )
-            pushed_count += 1
-
-            current_y = y_origin + row_gap
-            for item in bucket:
-                sticky_response = self.create_miro_sticky_note(
-                    external_board.external_id,
-                    item.title or item_type.replace("_", " ").title(),
-                    item.body or item.url or "",
-                    current_x,
-                    current_y,
-                )
-                current_y += row_gap
-                pushed_count += 1
-
-                metadata = dict(item.metadata_json or {})
-                miro_items = metadata.get("miro_item_ids")
-                if not isinstance(miro_items, list):
-                    miro_items = []
-                sticky_id = sticky_response.get("id")
-                if sticky_id:
-                    miro_items.append(str(sticky_id))
-                metadata["miro_item_ids"] = miro_items
-                metadata["miro_last_board_id"] = external_board.external_id
-                metadata["miro_last_pushed_at"] = datetime.now(timezone.utc).isoformat()
-                item.metadata_json = metadata
-
-            current_x += column_gap
-
-        board_metadata = dict(external_board.metadata_json or {})
-        board_metadata["last_sync_at"] = datetime.now(timezone.utc).isoformat()
-        board_metadata["last_sync_summary"] = {
-            "pushed_item_count": pushed_count,
-            "sections_count": section_count,
-            "duplicated_warning": True,
+        external_board.title = design_payload.get("title") or external_board.title
+        external_board.view_url = links["view_url"] or external_board.view_url
+        external_board.edit_url = links["edit_url"] or external_board.edit_url
+        external_board.metadata_json = {
+            **(external_board.metadata_json or {}),
+            **design_payload,
+            "canva_last_url_refresh_at": datetime.now(timezone.utc).isoformat(),
         }
-        external_board.metadata_json = board_metadata
         external_board.updated_at = datetime.now(timezone.utc)
-
         self.db.commit()
         self.db.refresh(external_board)
-        self._touch_project(project)
-
-        return {
-            "board": external_board,
-            "provider": "miro",
-            "pushed_item_count": pushed_count,
-            "sections_count": section_count,
-            "duplicated_warning": True,
-            "synced_at": datetime.now(timezone.utc),
-            "message": "Sync manual enviado ao Miro. Esta operação pode duplicar itens se executada novamente.",
-        }
+        if project:
+            self._touch_project(project)
+        return external_board
 
     def delete_external_board(self, external_board_id: int) -> bool:
         external_board = self._get_external_board(external_board_id)

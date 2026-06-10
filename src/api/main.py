@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import health, content_items, ingest, search, references, video_workshop, external_boards
+from src.api.routes import content_items, external_boards, health, ingest, references, search, video_workshop
 
 app = FastAPI(
     title="Dark Content Radar API",

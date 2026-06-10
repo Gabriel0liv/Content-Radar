@@ -19,14 +19,6 @@ from src.schemas.video_workshop import (
     VideoProjectItemUpdate,
     VideoProjectItemRead,
     VideoProjectItemFromScriptExcerpt,
-    VideoProjectBoardNodeFromItem,
-    VideoProjectBoardNodeCreate,
-    VideoProjectBoardNodeUpdate,
-    VideoProjectBoardNodeRead,
-    VideoProjectBoardEdgeCreate,
-    VideoProjectBoardEdgeRead,
-    VideoProjectBoardStateRead,
-    VideoProjectBoardStateUpsert
 )
 from src.services.video_workshop_service import VideoWorkshopService
 
@@ -228,87 +220,3 @@ def create_project_item_from_script_excerpt(
     if not project:
         raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
     return service.create_item_from_script_excerpt(id, payload)
-
-@router.post("/video-projects/{id}/board/nodes/from-item", response_model=VideoProjectBoardNodeRead, status_code=status.HTTP_201_CREATED)
-def create_project_board_node_from_item(
-    id: int,
-    payload: VideoProjectBoardNodeFromItem,
-    db: Session = Depends(get_db)
-):
-    service = VideoWorkshopService(db)
-    project = service.get_video_project(id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-    node = service.create_board_node_from_item(
-        id,
-        payload.item_id,
-        x=payload.x,
-        y=payload.y,
-        width=payload.width,
-        height=payload.height
-    )
-    if not node:
-        raise HTTPException(status_code=404, detail="Elemento da oficina não encontrado para este projeto")
-    return node
-
-
-# --- Board State & Controls ---
-@router.get("/video-projects/{id}/board", response_model=VideoProjectBoardStateRead)
-def get_project_board_state(id: int, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    project = service.get_video_project(id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-    return service.get_board_state_for_project(id)
-
-@router.put("/video-projects/{id}/board", response_model=VideoProjectBoardStateRead)
-def save_project_board_state(
-    id: int,
-    payload: VideoProjectBoardStateUpsert,
-    db: Session = Depends(get_db)
-):
-    service = VideoWorkshopService(db)
-    project = service.get_video_project(id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-    return service.save_board_state_for_project(id, payload.nodes, payload.edges)
-
-@router.post("/video-projects/{id}/board/nodes", response_model=VideoProjectBoardNodeRead, status_code=status.HTTP_201_CREATED)
-def create_project_board_node(id: int, payload: VideoProjectBoardNodeCreate, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    project = service.get_video_project(id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-    return service.create_board_node_for_project(id, payload)
-
-@router.patch("/video-project-board-nodes/{id}", response_model=VideoProjectBoardNodeRead)
-def update_project_board_node(id: int, payload: VideoProjectBoardNodeUpdate, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    node = service.update_board_node(id, payload)
-    if not node:
-        raise HTTPException(status_code=404, detail="Nó do quadro não encontrado")
-    return node
-
-@router.delete("/video-project-board-nodes/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project_board_node(id: int, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    success = service.delete_board_node(id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Nó do quadro não encontrado")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
-
-@router.post("/video-projects/{id}/board/edges", response_model=VideoProjectBoardEdgeRead, status_code=status.HTTP_201_CREATED)
-def create_project_board_edge(id: int, payload: VideoProjectBoardEdgeCreate, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    project = service.get_video_project(id)
-    if not project:
-        raise HTTPException(status_code=404, detail="Projeto de vídeo não encontrado")
-    return service.create_board_edge_for_project(id, payload)
-
-@router.delete("/video-project-board-edges/{id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_project_board_edge(id: int, db: Session = Depends(get_db)):
-    service = VideoWorkshopService(db)
-    success = service.delete_board_edge(id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Linha de conexão do quadro não encontrada")
-    return Response(status_code=status.HTTP_204_NO_CONTENT)

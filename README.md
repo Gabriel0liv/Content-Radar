@@ -258,6 +258,20 @@ A aplicação estará disponível em [http://localhost:3000](http://localhost:30
 * **Referências / Transcrições**: Importação e visualização de vídeos do YouTube diretamente pela URL para extração de metadados e legendas (transcrições e segmentos com timestamps) sem download de arquivos de mídia.
 * **Tratamento de Erros e Status Online**: Indicador de conexão na barra de cabeçalho que avisa em tempo real se a API FastAPI cair, apresentando um banner explicativo de instrução para restabelecer a conexão.
 
+### Quadro visual externo
+O quadro interno legado do workshop foi removido do fluxo recomendado. A direção atual é usar um provider visual externo, com **Canva** como opção principal.
+
+Para preparar a integração em ambiente local:
+
+```ini
+CANVA_ACCESS_TOKEN=seu_token_aqui
+```
+
+Observações desta fase:
+* Os links de visualização e edição podem ser **temporários** e devem ser tratados como efémeros em testes, QA e handoff.
+* Alguns fluxos começam a partir de **designs em branco** no Canva; isso é esperado enquanto a automação do provider visual externo evolui.
+* O Miro ainda pode aparecer em partes legadas do código durante a transição, mas o objetivo do produto é centralizar o quadro visual fora do app e priorizar Canva.
+
 
 ---
 
@@ -321,6 +335,5 @@ Este novo módulo permite adicionar referências analíticas importando dados de
 
 > [!CAUTION]
 > **Nota Legal de Uso**: As transcrições e metadados extraídos pelo portal destinam-se exclusivamente a análises de engajamento, triagem editorial e inspiração original para criação de roteiros próprios. O sistema não deve ser utilizado para plágio ou cópia não autorizada de conteúdos protegidos por direitos autorais de terceiros.
-
 
 

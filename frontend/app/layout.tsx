@@ -1,10 +1,7 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
 import { AppShell } from "@/components/layout/app-shell";
 import { Toaster } from "sonner";
 import "./globals.css";
-
-const inter = Inter({ subsets: ["latin"], variable: "--font-sans" });
 
 export const metadata: Metadata = {
   title: "Dark Content Radar - Painel de Curadoria",
@@ -18,7 +15,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="pt-BR" className="dark">
-      <body className={`${inter.variable} font-sans`}>
+      <body className="font-sans">
         <AppShell>{children}</AppShell>
         <Toaster theme="dark" position="bottom-right" closeButton richColors />
       </body>

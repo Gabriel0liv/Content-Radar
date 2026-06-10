@@ -145,7 +145,7 @@ class VideoProjectAudioIdeaRead(BaseModel):
 
 VALID_ITEM_TYPES = (
     "note", "reference", "script_excerpt", "audio",
-    "thumbnail", "production", "todo", "image", "group", "other"
+    "thumbnail", "production", "todo", "image", "other"
 )
 
 class VideoProjectItemCreate(BaseModel):
@@ -192,105 +192,11 @@ class VideoProjectItemFromScriptExcerpt(BaseModel):
     text: str
     title: Optional[str] = None
 
-class VideoProjectBoardNodeFromItem(BaseModel):
-    item_id: int
-    x: float = 200.0
-    y: float = 200.0
-    width: Optional[float] = 200.0
-    height: Optional[float] = 100.0
-
-
-# ─── Board Node schemas ──────────────────────────────────────────────────────
-
-class VideoProjectBoardNodeCreate(BaseModel):
-    node_key: str
-    node_type: Optional[str] = "note"
-    item_id: Optional[int] = None
-    title: Optional[str] = None
-    body: Optional[str] = None
-    x: float = 0.0
-    y: float = 0.0
-    width: Optional[float] = None
-    height: Optional[float] = None
-    color: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-
-class VideoProjectBoardNodeUpdate(BaseModel):
-    node_type: Optional[str] = None
-    item_id: Optional[int] = None
-    title: Optional[str] = None
-    body: Optional[str] = None
-    x: Optional[float] = None
-    y: Optional[float] = None
-    width: Optional[float] = None
-    height: Optional[float] = None
-    color: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-
-class VideoProjectBoardNodeRead(BaseModel):
-    id: int
-    video_project_id: int
-    item_id: Optional[int] = None
-    node_key: str
-    node_type: str
-    title: Optional[str] = None
-    body: Optional[str] = None
-    x: float
-    y: float
-    width: Optional[float] = None
-    height: Optional[float] = None
-    color: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ─── Board Edge schemas ──────────────────────────────────────────────────────
-
-class VideoProjectBoardEdgeCreate(BaseModel):
-    edge_key: str
-    source_node_key: str
-    target_node_key: str
-    label: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-
-class VideoProjectBoardEdgeUpdate(BaseModel):
-    label: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-
-class VideoProjectBoardEdgeRead(BaseModel):
-    id: int
-    video_project_id: int
-    edge_key: str
-    source_node_key: str
-    target_node_key: str
-    label: Optional[str] = None
-    data_json: Optional[Dict[str, Any]] = None
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-# ─── Unified Board State schemas ─────────────────────────────────────────────
-
-class VideoProjectBoardStateRead(BaseModel):
-    nodes: List[VideoProjectBoardNodeRead] = []
-    edges: List[VideoProjectBoardEdgeRead] = []
-
-# Upsert schema — used by PUT /board (no read-only fields required)
-class VideoProjectBoardStateUpsert(BaseModel):
-    nodes: List[VideoProjectBoardNodeCreate] = []
-    edges: List[VideoProjectBoardEdgeCreate] = []
-
 
 # ─── External Boards ─────────────────────────────────────────────────────────
 
 class ExternalBoardCreateRequest(BaseModel):
-    provider: Optional[str] = "miro"
+    provider: Optional[str] = "canva"
 
 
 class ExternalBoardRead(BaseModel):

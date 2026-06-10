@@ -30,8 +30,6 @@ class VideoProject(Base):
     project_notes = relationship("VideoProjectNote", back_populates="video_project", cascade="all, delete-orphan")
     references = relationship("VideoProjectReference", back_populates="video_project", cascade="all, delete-orphan")
     audio_ideas = relationship("VideoProjectAudioIdea", back_populates="video_project", cascade="all, delete-orphan")
-    board_nodes = relationship("VideoProjectBoardNode", back_populates="video_project", cascade="all, delete-orphan")
-    board_edges = relationship("VideoProjectBoardEdge", back_populates="video_project", cascade="all, delete-orphan")
     items = relationship("VideoProjectItem", back_populates="video_project", cascade="all, delete-orphan")
     external_boards = relationship("VideoProjectExternalBoard", back_populates="video_project", cascade="all, delete-orphan")
 
@@ -147,64 +145,12 @@ class VideoProjectItem(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     video_project = relationship("VideoProject", back_populates="items")
-    board_nodes = relationship("VideoProjectBoardNode", back_populates="item")
 
     __table_args__ = (
         Index("idx_vpi_project_id2", video_project_id),
         Index("idx_vpi_item_type2", item_type),
         Index("idx_vpi_status2", status),
         Index("idx_vpi_pinned2", pinned),
-    )
-
-
-class VideoProjectBoardNode(Base):
-    __tablename__ = "video_project_board_nodes"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    video_project_id = Column(BigInteger, ForeignKey("video_projects.id", ondelete="CASCADE"), nullable=False)
-    item_id = Column(BigInteger, ForeignKey("video_project_items.id", ondelete="SET NULL"), nullable=True)
-    node_key = Column(Text, nullable=False)
-    node_type = Column(Text, nullable=False, server_default="note")
-    title = Column(Text, nullable=True)
-    body = Column(Text, nullable=True)
-    x = Column(Float, nullable=False, server_default="0")
-    y = Column(Float, nullable=False, server_default="0")
-    width = Column(Float, nullable=True)
-    height = Column(Float, nullable=True)
-    color = Column(Text, nullable=True)
-    data_json = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-    video_project = relationship("VideoProject", back_populates="board_nodes")
-    item = relationship("VideoProjectItem", back_populates="board_nodes")
-
-    __table_args__ = (
-        UniqueConstraint("video_project_id", "node_key", name="unique_video_project_board_nodes_project_id_node_key"),
-        Index("idx_video_project_board_nodes_project_id", video_project_id),
-        Index("idx_video_project_board_nodes_node_type", node_type),
-    )
-
-
-class VideoProjectBoardEdge(Base):
-    __tablename__ = "video_project_board_edges"
-
-    id = Column(BigInteger, primary_key=True, autoincrement=True)
-    video_project_id = Column(BigInteger, ForeignKey("video_projects.id", ondelete="CASCADE"), nullable=False)
-    edge_key = Column(Text, nullable=False)
-    source_node_key = Column(Text, nullable=False)
-    target_node_key = Column(Text, nullable=False)
-    label = Column(Text, nullable=True)
-    data_json = Column(JSONB, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    video_project = relationship("VideoProject", back_populates="board_edges")
-
-    __table_args__ = (
-        UniqueConstraint("video_project_id", "edge_key", name="unique_video_project_board_edges_project_id_edge_key"),
-        Index("idx_video_project_board_edges_project_id", video_project_id),
-        Index("idx_video_project_board_edges_source", source_node_key),
-        Index("idx_video_project_board_edges_target", target_node_key),
     )
 
 
