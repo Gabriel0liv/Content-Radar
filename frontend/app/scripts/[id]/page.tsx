@@ -32,7 +32,6 @@ import {
 import {
   ArrowLeft,
   Archive,
-  BookOpen,
   CheckSquare,
   Copy,
   ExternalLink,
@@ -41,6 +40,7 @@ import {
   FolderKanban,
   Link2,
   Loader2,
+  MoreHorizontal,
   Music,
   Pin,
   PinOff,
@@ -52,6 +52,7 @@ import {
   StickyNote,
   Trash2,
   Type,
+  X,
 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -156,6 +157,11 @@ export default function VideoWorkspacePage() {
   const [librarySearch, setLibrarySearch] = useState("");
   const [libraryPinnedOnly, setLibraryPinnedOnly] = useState(false);
   const [libraryGroupBy, setLibraryGroupBy] = useState<LibraryGroupBy>("type");
+  const [isLibraryOpen, setIsLibraryOpen] = useState(false);
+  const [isLibraryComposerOpen, setIsLibraryComposerOpen] = useState(false);
+  const [isCanvaMenuOpen, setIsCanvaMenuOpen] = useState(false);
+  const [isProjectMenuOpen, setIsProjectMenuOpen] = useState(false);
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   const [libraryForm, setLibraryForm] = useState({
     item_type: "note" as VideoProjectItemType,
     title: "",
@@ -314,6 +320,8 @@ export default function VideoWorkspacePage() {
     [externalBoards]
   );
   const primaryCanvaBoard = canvaBoards[0] || null;
+  const hasCanvaBoard = Boolean(primaryCanvaBoard);
+  const isCanvaOAuthConnected = Boolean(canvaOAuthStatus?.connected);
 
   const groupedItems = useMemo(() => {
     const groups = new Map<string, VideoProjectItem[]>();
@@ -431,6 +439,8 @@ export default function VideoWorkspacePage() {
     try {
       const created = await createVideoProjectItem(projectId, libraryForm);
       setItems((current) => [created, ...current]);
+      setIsLibraryComposerOpen(false);
+      setExpandedItemId(created.id);
       setLibraryForm({
         item_type: "note",
         title: "",
@@ -447,6 +457,7 @@ export default function VideoWorkspacePage() {
 
   const handleStartEditingItem = (item: VideoProjectItem) => {
     setEditingItemId(item.id);
+    setExpandedItemId(item.id);
     setEditingItemDraft({
       item_type: item.item_type,
       title: item.title || "",
@@ -527,7 +538,7 @@ export default function VideoWorkspacePage() {
   };
 
   const handleCreateCanvaExternalBoard = async () => {
-    if (!canvaOAuthStatus?.connected) {
+    if (!isCanvaOAuthConnected) {
       toast.error("Conecte o Canva antes de criar boards externos.");
       return;
     }
@@ -584,6 +595,7 @@ export default function VideoWorkspacePage() {
 
   const handleOpenCanvaBoard = (board: ExternalBoard) => {
     window.open(`${apiBaseUrl}/external-boards/${board.id}/open-canva`, "_blank", "noopener,noreferrer");
+    setIsCanvaMenuOpen(false);
   };
 
   const handleCopyCanvaPackage = async () => {
@@ -671,648 +683,524 @@ export default function VideoWorkspacePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.10),_transparent_30%),radial-gradient(circle_at_right,_rgba(99,102,241,0.12),_transparent_28%),#020617] text-slate-100">
-      <div className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
-        <div className="mb-6 flex flex-col gap-4 rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-2xl shadow-slate-950/30 backdrop-blur">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-            <div className="space-y-3">
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,_rgba(56,189,248,0.08),_transparent_24%),radial-gradient(circle_at_right,_rgba(99,102,241,0.10),_transparent_24%),#020617] text-slate-100">
+      <div className="mx-auto max-w-[1500px] px-4 py-4 sm:px-6">
+        <div className="sticky top-0 z-20 mb-4 rounded-3xl border border-slate-800/80 bg-slate-950/80 p-3 shadow-2xl shadow-slate-950/30 backdrop-blur">
+          <div className="flex flex-col gap-3 xl:flex-row xl:items-center">
+            <div className="flex min-w-0 flex-1 items-center gap-3">
               <Link
                 href="/scripts"
-                className="inline-flex items-center gap-2 text-sm font-medium text-slate-400 transition-colors hover:text-slate-200"
+                className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-slate-800 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-700 hover:text-white"
+                title="Voltar para scripts"
               >
                 <ArrowLeft className="h-4 w-4" />
-                Voltar para scripts
               </Link>
-              <div className="space-y-2">
-                <input
-                  value={project.title}
-                  onChange={(event) => setProject({ ...project, title: event.target.value })}
-                  onBlur={() => handleUpdateProjectMeta({ title: project.title })}
-                  className="w-full bg-transparent text-3xl font-semibold tracking-tight text-white outline-none"
-                />
-                <textarea
-                  value={project.description || ""}
-                  onChange={(event) => setProject({ ...project, description: event.target.value })}
-                  onBlur={() => handleUpdateProjectMeta({ description: project.description || null })}
-                  rows={2}
-                  className="w-full resize-none rounded-2xl border border-slate-800/80 bg-slate-900/60 px-4 py-3 text-sm text-slate-300 outline-none transition-colors focus:border-sky-500/40"
-                  placeholder="Resumo da proposta, angulo do video e objetivo da oficina."
-                />
-              </div>
-            </div>
-
-            <div className="grid min-w-[290px] gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Status
-                </div>
-                <select
-                  value={project.status}
-                  onChange={(event) => {
-                    const nextStatus = event.target.value as VideoProject["status"];
-                    setProject({ ...project, status: nextStatus });
-                    handleUpdateProjectMeta({ status: nextStatus });
-                  }}
-                  className="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-200 outline-none focus:border-sky-500/40"
-                >
-                  {Object.entries(statusConfig).map(([value, config]) => (
-                    <option key={value} value={value}>
-                      {config.label}
-                    </option>
-                  ))}
-                </select>
-                <div className={cn("mt-3 inline-flex rounded-full border px-2.5 py-1 text-xs font-semibold", statusConfig[project.status].className)}>
-                  {statusConfig[project.status].label}
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-800/80 bg-slate-900/60 p-4">
-                <div className="mb-2 text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">
-                  Oficina
-                </div>
-                <div className="space-y-2 text-sm text-slate-300">
-                  <div>{items.length} elementos</div>
-                  <div>{primaryCanvaBoard ? "Board Canva conectado" : "Sem board Canva"}</div>
-                  <div>{scriptWordCount} palavras no roteiro</div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2 border-t border-slate-800/80 pt-4">
-            <button
-              onClick={handleSaveScript}
-              disabled={savingScript}
-              className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {savingScript ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-              Salvar roteiro
-            </button>
-            {!canvaOAuthStatus?.connected ? (
-              <a
-                href={canvaConnectUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-500/15"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Conectar Canva
-              </a>
-            ) : primaryCanvaBoard ? (
-              <button
-                onClick={() => handleOpenCanvaBoard(primaryCanvaBoard)}
-                className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-500/15"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Abrir no Canva
-              </button>
-            ) : (
-              <button
-                onClick={handleCreateCanvaExternalBoard}
-                disabled={creatingExternalBoard || !canvaOAuthStatus?.connected}
-                className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-100 transition-colors hover:bg-sky-500/15 disabled:opacity-50"
-              >
-                {creatingExternalBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                Criar board Canva
-              </button>
-            )}
-            {primaryCanvaBoard ? (
-              <button
-                onClick={() => handleRefreshBoardUrl(primaryCanvaBoard)}
-                disabled={refreshingBoardId === primaryCanvaBoard.id}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white disabled:opacity-50"
-              >
-                {refreshingBoardId === primaryCanvaBoard.id ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-                Renovar link
-              </button>
-            ) : null}
-            <button
-              onClick={handleCopyCanvaPackage}
-              className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
-            >
-              <Copy className="h-4 w-4" />
-              Copiar pacote para Canva
-            </button>
-            <div className="ml-auto flex flex-wrap items-center gap-2">
-              <button
-                onClick={handleArchiveProject}
-                className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-4 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
-              >
-                <Archive className="h-4 w-4" />
-                Arquivar
-              </button>
-              <button
-                onClick={handleDeleteProject}
-                className="inline-flex items-center gap-2 rounded-full border border-rose-900/60 bg-rose-950/20 px-4 py-2 text-sm text-rose-300 transition-colors hover:bg-rose-950/35"
-              >
-                <Trash2 className="h-4 w-4" />
-                Excluir
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-white">Editor de roteiro</div>
-                <div className="text-xs text-slate-500">
-                  Selecione um trecho para mandar o recorte para a biblioteca do projeto.
-                </div>
-              </div>
-              <button
-                onClick={handleSendScriptExcerptToLibrary}
-                className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-200 transition-colors hover:bg-sky-500/15"
-              >
-                <Sparkles className="h-4 w-4" />
-                Enviar trecho para biblioteca
-              </button>
-            </div>
-            <div className="min-h-[580px] rounded-3xl border border-slate-800 bg-slate-950/80 p-4">
-              <EditorContent editor={editor} className="prose prose-invert max-w-none [&_.ProseMirror]:min-h-[520px] [&_.ProseMirror]:outline-none" />
-            </div>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5">
-              <div className="text-[11px] font-bold uppercase tracking-[0.18em] text-slate-500">Metricas</div>
-              <div className="mt-4 grid gap-3">
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                  <div className="text-2xl font-semibold text-white">{scriptWordCount}</div>
-                  <div className="text-xs text-slate-500">Palavras</div>
-                </div>
-                <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-4">
-                  <div className="text-2xl font-semibold text-white">{formatEstimatedDuration(scriptDuration)}</div>
-                  <div className="text-xs text-slate-500">Duracao estimada</div>
-                </div>
-              </div>
-            </div>
-
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-white">Canva</div>
-                  <div className="text-xs text-slate-500">
-                    Use o Canva como whiteboard visual deste video, sem tirar o roteiro e a biblioteca do Dark Content.
-                  </div>
-                </div>
-                <span
-                  className={cn(
-                    "rounded-full border px-2.5 py-1 text-xs font-semibold",
-                    canvaOAuthStatus?.connected
-                      ? "border-emerald-500/30 bg-emerald-500/10 text-emerald-200"
-                      : "border-amber-500/30 bg-amber-500/10 text-amber-100"
-                  )}
-                >
-                  {canvaOAuthStatus?.connected ? "Conectado" : "Desconectado"}
-                </span>
-              </div>
-              <div className="mt-4 space-y-3 text-sm text-slate-300">
-                <p>
-                  {primaryCanvaBoard
-                    ? "O board existente e reutilizado sempre que voce abrir o Canva. O app nao recria o quadro."
-                    : "Crie um board Canva uma vez e depois reabra o mesmo quadro sempre que precisar continuar o trabalho visual."}
-                </p>
-                <p className="text-slate-400">
-                  O roteiro e a biblioteca continuam como fonte principal dos dados estruturados. O Canva fica para organizacao visual externa.
-                </p>
-                {primaryCanvaBoard ? (
-                  <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-xs text-slate-400">
-                    <div className="font-semibold text-slate-200">{primaryCanvaBoard.title || "Board Canva"}</div>
-                    <div>Criado em {new Date(primaryCanvaBoard.created_at).toLocaleString("pt-BR")}</div>
-                    {getBoardRefreshTimestamp(primaryCanvaBoard) ? (
-                      <div>
-                        URL renovada em {new Date(getBoardRefreshTimestamp(primaryCanvaBoard) as string).toLocaleString("pt-BR")}
-                      </div>
-                    ) : null}
-                    {formatBoardLinkExpiry(primaryCanvaBoard) ? (
-                      <div>Expira em {new Date(formatBoardLinkExpiry(primaryCanvaBoard) as string).toLocaleString("pt-BR")}</div>
-                    ) : null}
-                  </div>
-                ) : null}
-                {canvaOAuthStatus?.expires_at ? (
-                  <div className="text-xs text-slate-500">
-                    OAuth expira em {new Date(canvaOAuthStatus.expires_at).toLocaleString("pt-BR")}
-                  </div>
-                ) : null}
-                {canvaOAuthStatus?.message ? (
-                  <div className="text-xs text-slate-500">{canvaOAuthStatus.message}</div>
-                ) : null}
-                {canvaOAuthStatus?.using_dev_token_fallback ? (
-                  <div className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-xs leading-relaxed text-amber-100">
-                    Usando token de desenvolvimento do .env. Este modo serve como fallback local e nao e recomendado para uso continuo.
-                  </div>
-                ) : null}
-              </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  onClick={() => (primaryCanvaBoard ? handleOpenCanvaBoard(primaryCanvaBoard) : handleCreateCanvaExternalBoard())}
-                  disabled={creatingExternalBoard || !canvaOAuthStatus?.connected}
-                  className="inline-flex flex-1 items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
-                >
-                  {creatingExternalBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-                  {primaryCanvaBoard ? "Abrir no Canva" : "Criar board Canva"}
-                </button>
-                <button
-                  onClick={() => primaryCanvaBoard && handleRefreshBoardUrl(primaryCanvaBoard)}
-                  disabled={!primaryCanvaBoard || refreshingBoardId === primaryCanvaBoard?.id}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-800 disabled:opacity-50"
-                >
-                  {refreshingBoardId === primaryCanvaBoard?.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  Atualizar acesso
-                </button>
-              </div>
-              {!canvaOAuthStatus?.connected ? (
-                <div className="mt-3 text-xs leading-relaxed text-amber-100">
-                  Conecte o Canva antes de criar boards externos.
-                </div>
-              ) : null}
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a
-                  href={canvaConnectUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
-                >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                  Conectar Canva
-                </a>
-                <button
-                  onClick={handleRefreshCanvaOAuth}
-                  disabled={refreshingOAuthToken || !canvaOAuthStatus?.connected || canvaOAuthStatus?.using_dev_token_fallback}
-                  className="inline-flex items-center gap-2 rounded-full border border-slate-700 bg-slate-900/70 px-3 py-2 text-xs text-slate-300 transition-colors hover:border-slate-600 hover:text-white disabled:opacity-50"
-                >
-                  {refreshingOAuthToken ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                  Renovar OAuth
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-[330px_minmax(0,1fr)]">
-          <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
-            <div className="mb-4 flex items-center gap-2">
-              <FolderKanban className="h-4 w-4 text-sky-300" />
-              <div>
-                <div className="text-sm font-semibold text-white">Biblioteca</div>
-                <div className="text-xs text-slate-500">Notas, referencias, musicas, tarefas e imagens entram pela mesma base.</div>
-              </div>
-            </div>
-            <form onSubmit={handleCreateLibraryItem} className="space-y-3">
+              <input
+                value={project.title}
+                onChange={(event) => setProject({ ...project, title: event.target.value })}
+                onBlur={() => handleUpdateProjectMeta({ title: project.title })}
+                className="min-w-0 flex-1 bg-transparent text-xl font-semibold tracking-tight text-white outline-none md:text-2xl"
+              />
               <select
-                value={libraryForm.item_type}
-                onChange={(event) => setLibraryForm((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
-                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
+                value={project.status}
+                onChange={(event) => {
+                  const nextStatus = event.target.value as VideoProject["status"];
+                  setProject({ ...project, status: nextStatus });
+                  handleUpdateProjectMeta({ status: nextStatus });
+                }}
+                className="h-10 rounded-full border border-slate-800 bg-slate-900/80 px-3 text-sm text-slate-200 outline-none focus:border-sky-500/40"
               >
-                {Object.entries(itemTypeMeta).map(([value, meta]) => (
+                {Object.entries(statusConfig).map(([value, config]) => (
                   <option key={value} value={value}>
-                    {meta.label}
+                    {config.label}
                   </option>
                 ))}
               </select>
-              <input
-                value={libraryForm.title}
-                onChange={(event) => setLibraryForm((current) => ({ ...current, title: event.target.value }))}
-                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                placeholder="Titulo"
-              />
-              <input
-                value={libraryForm.url}
-                onChange={(event) => setLibraryForm((current) => ({ ...current, url: event.target.value }))}
-                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                placeholder="URL opcional"
-              />
-              <textarea
-                value={libraryForm.body}
-                onChange={(event) => setLibraryForm((current) => ({ ...current, body: event.target.value }))}
-                rows={5}
-                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                placeholder="Observacoes, nota de uso, comentario ou contexto."
-              />
-              <div className="grid gap-3 sm:grid-cols-2">
-                <select
-                  value={libraryForm.status}
-                  onChange={(event) => setLibraryForm((current) => ({ ...current, status: event.target.value as VideoProjectItem["status"] }))}
-                  className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                >
-                  <option value="open">Aberto</option>
-                  <option value="done">Concluido</option>
-                  <option value="archived">Arquivado</option>
-                </select>
-                <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
-                  <input
-                    type="checkbox"
-                    checked={libraryForm.pinned}
-                    onChange={(event) => setLibraryForm((current) => ({ ...current, pinned: event.target.checked }))}
-                    className="rounded border-slate-700 bg-slate-950"
-                  />
-                  Fixado
-                </label>
-              </div>
-              <button
-                type="submit"
-                className="inline-flex w-full items-center justify-center gap-2 rounded-2xl bg-indigo-600 px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-indigo-500"
-              >
-                <Plus className="h-4 w-4" />
-                Criar elemento
-              </button>
-            </form>
-          </div>
-
-          <div className="space-y-4">
-            <div className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-xl shadow-slate-950/20">
-              <div className="flex flex-col gap-4">
-                <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                  <div>
-                    <div className="text-sm font-semibold text-white">Biblioteca organizada</div>
-                    <div className="text-xs text-slate-500">
-                      Filtre por texto, tipo, status ou fixados. O Canva usa esta base como apoio, mas o app nao promete sincronizacao bidirecional.
-                    </div>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      onClick={() => setLibraryGroupBy("type")}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-medium",
-                        libraryGroupBy === "type"
-                          ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
-                          : "border-slate-800 bg-slate-900/70 text-slate-400"
-                      )}
-                    >
-                      Agrupar por tipo
-                    </button>
-                    <button
-                      onClick={() => setLibraryGroupBy("status")}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-medium",
-                        libraryGroupBy === "status"
-                          ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
-                          : "border-slate-800 bg-slate-900/70 text-slate-400"
-                      )}
-                    >
-                      Agrupar por status
-                    </button>
-                  </div>
-                </div>
-
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
-                  <input
-                    value={librarySearch}
-                    onChange={(event) => setLibrarySearch(event.target.value)}
-                    placeholder="Buscar por titulo, corpo ou URL"
-                    className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 py-3 pl-10 pr-4 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                  />
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => setLibraryFilter("all")}
-                    className={cn(
-                      "rounded-full border px-3 py-2 text-sm font-medium",
-                      libraryFilter === "all"
-                        ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
-                        : "border-slate-800 bg-slate-900/70 text-slate-400"
-                    )}
-                  >
-                    Todos
-                  </button>
-                  {Object.entries(itemTypeMeta).map(([value, meta]) => (
-                    <button
-                      key={value}
-                      onClick={() => setLibraryFilter(value as VideoProjectItemType)}
-                      className={cn(
-                        "rounded-full border px-3 py-2 text-sm font-medium",
-                        libraryFilter === value
-                          ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
-                          : "border-slate-800 bg-slate-900/70 text-slate-400"
-                      )}
-                    >
-                      {meta.label}
-                    </button>
-                  ))}
-                </div>
-
-                <div className="flex flex-wrap gap-2">
-                  {(["all", "open", "done", "archived"] as const).map((value) => (
-                    <button
-                      key={value}
-                      onClick={() => setLibraryStatusFilter(value)}
-                      className={cn(
-                        "rounded-full border px-3 py-1.5 text-xs font-medium",
-                        libraryStatusFilter === value
-                          ? "border-sky-500/30 bg-sky-500/10 text-sky-100"
-                          : "border-slate-800 bg-slate-900/70 text-slate-400"
-                      )}
-                    >
-                      {value === "all" ? "Todos os status" : itemStatusMeta[value].label}
-                    </button>
-                  ))}
-                  <button
-                    onClick={() => setLibraryPinnedOnly((current) => !current)}
-                    className={cn(
-                      "rounded-full border px-3 py-1.5 text-xs font-medium",
-                      libraryPinnedOnly
-                        ? "border-amber-500/30 bg-amber-500/10 text-amber-100"
-                        : "border-slate-800 bg-slate-900/70 text-slate-400"
-                    )}
-                  >
-                    So fixados
-                  </button>
-                </div>
-              </div>
             </div>
 
-            {groupedItems.length === 0 ? (
-              <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-6 py-16 text-center">
-                <div className="text-lg font-semibold text-white">Nenhum item nesta combinacao de filtros</div>
-                <p className="mt-2 text-sm text-slate-500">
-                  Ajuste a busca ou crie um novo elemento para alimentar a biblioteca.
-                </p>
+            <div className="flex flex-wrap items-center gap-2 text-sm text-slate-400">
+              <span className="rounded-full border border-slate-800 bg-slate-900/70 px-3 py-2">
+                {scriptWordCount} palavras
+              </span>
+              <span className="rounded-full border border-slate-800 bg-slate-900/70 px-3 py-2">
+                {formatEstimatedDuration(scriptDuration)}
+              </span>
+              <button
+                onClick={handleSaveScript}
+                disabled={savingScript}
+                className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white transition-colors hover:bg-indigo-500 disabled:opacity-50"
+              >
+                {savingScript ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Salvar
+              </button>
+              <button
+                onClick={() => setIsLibraryOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-4 py-2 text-sm text-slate-200 transition-colors hover:border-slate-700 hover:text-white"
+              >
+                <FolderKanban className="h-4 w-4" />
+                Biblioteca
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setIsCanvaMenuOpen((current) => !current);
+                    setIsProjectMenuOpen(false);
+                  }}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-4 py-2 text-sm text-slate-200 transition-colors hover:border-slate-700 hover:text-white"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Canva
+                  <span className="rounded-full border border-slate-700 px-2 py-0.5 text-[11px] text-slate-400">
+                    {!isCanvaOAuthConnected ? "Nao conectado" : hasCanvaBoard ? "Board criado" : "Pronto"}
+                  </span>
+                </button>
+                {isCanvaMenuOpen ? (
+                  <div className="absolute right-0 top-12 z-30 w-64 rounded-2xl border border-slate-800 bg-slate-950/95 p-2 shadow-2xl shadow-slate-950/40">
+                    {!isCanvaOAuthConnected ? (
+                      <a
+                        href={canvaConnectUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-200 transition-colors hover:bg-slate-900"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Conectar Canva
+                      </a>
+                    ) : !hasCanvaBoard ? (
+                      <button
+                        onClick={handleCreateCanvaExternalBoard}
+                        disabled={creatingExternalBoard}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900 disabled:opacity-50"
+                      >
+                        {creatingExternalBoard ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                        Criar board Canva
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleOpenCanvaBoard(primaryCanvaBoard)}
+                        className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900"
+                      >
+                        <ExternalLink className="h-4 w-4" />
+                        Abrir no Canva
+                      </button>
+                    )}
+                    <button
+                      onClick={handleCopyCanvaPackage}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900"
+                    >
+                      <Copy className="h-4 w-4" />
+                      Copiar pacote
+                    </button>
+                    <button
+                      onClick={() => primaryCanvaBoard && handleRefreshBoardUrl(primaryCanvaBoard)}
+                      disabled={!primaryCanvaBoard || refreshingBoardId === primaryCanvaBoard.id}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900 disabled:opacity-50"
+                    >
+                      {refreshingBoardId === primaryCanvaBoard?.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Atualizar acesso
+                    </button>
+                    <button
+                      onClick={handleRefreshCanvaOAuth}
+                      disabled={refreshingOAuthToken || !isCanvaOAuthConnected || Boolean(canvaOAuthStatus?.using_dev_token_fallback)}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900 disabled:opacity-50"
+                    >
+                      {refreshingOAuthToken ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                      Renovar OAuth
+                    </button>
+                  </div>
+                ) : null}
               </div>
-            ) : (
-              groupedItems.map((group) => (
-                <section key={group.key} className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <div className="text-sm font-semibold text-white">{group.label}</div>
-                    <div className="text-xs text-slate-500">{group.items.length} item(ns)</div>
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    setIsProjectMenuOpen((current) => !current);
+                    setIsCanvaMenuOpen(false);
+                  }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-900/70 text-slate-300 transition-colors hover:border-slate-700 hover:text-white"
+                >
+                  <MoreHorizontal className="h-4 w-4" />
+                </button>
+                {isProjectMenuOpen ? (
+                  <div className="absolute right-0 top-12 z-30 w-48 rounded-2xl border border-slate-800 bg-slate-950/95 p-2 shadow-2xl shadow-slate-950/40">
+                    <button
+                      onClick={handleArchiveProject}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-slate-200 transition-colors hover:bg-slate-900"
+                    >
+                      <Archive className="h-4 w-4" />
+                      Arquivar
+                    </button>
+                    <button
+                      onClick={handleDeleteProject}
+                      className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-sm text-rose-300 transition-colors hover:bg-rose-950/20"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Excluir
+                    </button>
                   </div>
-                  <div className="grid gap-4 xl:grid-cols-2">
-                    {group.items.map((item) => {
-                      const meta = itemTypeMeta[item.item_type];
-                      const Icon = meta.icon;
-                      const isEditing = editingItemId === item.id;
+                ) : null}
+              </div>
+            </div>
+          </div>
 
-                      return (
-                        <div
-                          key={item.id}
-                          className="rounded-3xl border border-slate-800/80 bg-slate-950/60 p-5 shadow-lg shadow-slate-950/20"
-                        >
-                          <div className="mb-3 flex items-start justify-between gap-3">
-                            <div className="flex items-start gap-3">
-                              <span className="rounded-2xl border border-slate-800 bg-slate-900/80 p-2 text-sky-300">
-                                <Icon className="h-4 w-4" />
-                              </span>
-                              <div className="space-y-1">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <div className="text-sm font-semibold text-white">{item.title || "Sem titulo"}</div>
-                                  <span className="rounded-full border border-slate-800 bg-slate-900 px-2 py-0.5 text-[11px] text-slate-400">
-                                    {meta.label}
-                                  </span>
-                                  <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-medium", itemStatusMeta[item.status].className)}>
-                                    {itemStatusMeta[item.status].label}
-                                  </span>
-                                  {item.pinned ? (
-                                    <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[11px] font-medium text-amber-100">
-                                      Fixado
-                                    </span>
-                                  ) : null}
-                                </div>
-                                <div className="text-xs text-slate-500">{meta.description}</div>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleQuickUpdateItem(item.id, { pinned: !item.pinned })}
-                                className="rounded-full border border-slate-700 bg-slate-900/70 p-2 text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
-                                title={item.pinned ? "Desfixar" : "Fixar"}
-                              >
-                                {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
-                              </button>
-                              <button
-                                onClick={() => handleDeleteItem(item.id)}
-                                className="rounded-full border border-rose-900/70 bg-rose-950/20 p-2 text-rose-200 hover:bg-rose-950/35"
-                                title="Excluir"
-                              >
-                                <Trash2 className="h-3.5 w-3.5" />
-                              </button>
-                            </div>
-                          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-slate-800/80 pt-3 text-xs text-slate-500">
+            <span className={cn("rounded-full border px-2.5 py-1 font-medium", statusConfig[project.status].className)}>
+              {statusConfig[project.status].label}
+            </span>
+            <span>{items.length} elementos</span>
+            <span>{hasCanvaBoard ? "Canva pronto" : isCanvaOAuthConnected ? "Canva conectado" : "Canva nao conectado"}</span>
+          </div>
+        </div>
 
-                          {isEditing ? (
-                            <div className="space-y-3">
-                              <select
-                                value={editingItemDraft.item_type}
-                                onChange={(event) => setEditingItemDraft((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                              >
-                                {Object.entries(itemTypeMeta).map(([value, metaOption]) => (
-                                  <option key={value} value={value}>
-                                    {metaOption.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <input
-                                value={editingItemDraft.title}
-                                onChange={(event) => setEditingItemDraft((current) => ({ ...current, title: event.target.value }))}
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                              />
-                              <input
-                                value={editingItemDraft.url}
-                                onChange={(event) => setEditingItemDraft((current) => ({ ...current, url: event.target.value }))}
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                                placeholder="URL"
-                              />
-                              <textarea
-                                value={editingItemDraft.body}
-                                onChange={(event) => setEditingItemDraft((current) => ({ ...current, body: event.target.value }))}
-                                rows={4}
-                                className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                              />
-                              <div className="grid gap-3 sm:grid-cols-2">
-                                <select
-                                  value={editingItemDraft.status}
-                                  onChange={(event) => setEditingItemDraft((current) => ({ ...current, status: event.target.value as VideoProjectItem["status"] }))}
-                                  className="rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-100 outline-none focus:border-sky-500/40"
-                                >
-                                  <option value="open">Aberto</option>
-                                  <option value="done">Concluido</option>
-                                  <option value="archived">Arquivado</option>
-                                </select>
-                                <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900/80 px-3 py-2 text-sm text-slate-200">
-                                  <input
-                                    type="checkbox"
-                                    checked={editingItemDraft.pinned}
-                                    onChange={(event) => setEditingItemDraft((current) => ({ ...current, pinned: event.target.checked }))}
-                                  />
-                                  Fixado
-                                </label>
-                              </div>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={handleSaveEditingItem}
-                                  className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white hover:bg-indigo-500"
-                                >
-                                  Salvar
-                                </button>
-                                <button
-                                  onClick={() => setEditingItemId(null)}
-                                  className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300"
-                                >
-                                  Cancelar
-                                </button>
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-3">
-                              {item.body ? (
-                                <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">
-                                  {item.body}
-                                </p>
-                              ) : (
-                                <p className="text-sm text-slate-500">Sem observacoes.</p>
-                              )}
-                              {item.url ? (
-                                <a
-                                  href={item.url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="inline-flex items-center gap-2 text-sm font-medium text-sky-300 hover:underline"
-                                >
-                                  <Link2 className="h-4 w-4" />
-                                  {item.url}
-                                </a>
-                              ) : null}
-                              <div className="flex flex-wrap items-center gap-2 pt-2">
-                                {(["open", "done", "archived"] as const).map((statusValue) => (
-                                  <button
-                                    key={statusValue}
-                                    onClick={() => handleQuickUpdateItem(item.id, { status: statusValue })}
-                                    className={cn(
-                                      "rounded-full border px-2.5 py-1 text-xs font-medium transition-colors",
-                                      item.status === statusValue
-                                        ? itemStatusMeta[statusValue].className
-                                        : "border-slate-800 bg-slate-900 px-2.5 py-1 text-xs text-slate-400"
-                                    )}
-                                  >
-                                    {itemStatusMeta[statusValue].label}
-                                  </button>
-                                ))}
-                                <button
-                                  onClick={() => handleStartEditingItem(item)}
-                                  className="ml-auto rounded-full border border-slate-700 px-3 py-1.5 text-xs text-slate-300 hover:border-slate-600 hover:text-white"
-                                >
-                                  Editar
-                                </button>
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))
-            )}
+        <div className="rounded-[32px] border border-slate-800/80 bg-slate-950/55 p-4 shadow-2xl shadow-slate-950/20">
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <textarea
+                value={project.description || ""}
+                onChange={(event) => setProject({ ...project, description: event.target.value })}
+                onBlur={() => handleUpdateProjectMeta({ description: project.description || null })}
+                rows={1}
+                className="w-full resize-none bg-transparent text-sm text-slate-400 outline-none placeholder:text-slate-600"
+                placeholder="Resumo curto, angulo e objetivo do roteiro."
+              />
+            </div>
+            <button
+              onClick={handleSendScriptExcerptToLibrary}
+              className="inline-flex items-center gap-2 rounded-full border border-sky-500/30 bg-sky-500/10 px-4 py-2 text-sm font-medium text-sky-200 transition-colors hover:bg-sky-500/15"
+            >
+              <Sparkles className="h-4 w-4" />
+              Enviar trecho para biblioteca
+            </button>
+          </div>
+          <div className="min-h-[76vh] rounded-[28px] border border-slate-800 bg-slate-950/85 p-5">
+            <EditorContent editor={editor} className="prose prose-invert max-w-none [&_.ProseMirror]:min-h-[70vh] [&_.ProseMirror]:outline-none" />
           </div>
         </div>
       </div>
+
+      {isLibraryOpen ? (
+        <div className="fixed inset-0 z-40 flex">
+          <button
+            aria-label="Fechar biblioteca"
+            className="flex-1 bg-slate-950/70 backdrop-blur-sm"
+            onClick={() => {
+              setIsLibraryOpen(false);
+              setIsLibraryComposerOpen(false);
+            }}
+          />
+          <div className="relative h-full w-full max-w-[560px] overflow-y-auto border-l border-slate-800 bg-slate-950/95 p-4 shadow-2xl shadow-slate-950/40">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <div className="text-base font-semibold text-white">Biblioteca</div>
+                <div className="text-xs text-slate-500">{filteredItems.length} itens visiveis</div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsLibraryComposerOpen((current) => !current)}
+                  className="inline-flex items-center gap-2 rounded-full border border-slate-800 bg-slate-900/70 px-3 py-2 text-sm text-slate-200"
+                >
+                  <Plus className="h-4 w-4" />
+                  Novo elemento
+                </button>
+                <button
+                  onClick={() => {
+                    setIsLibraryOpen(false);
+                    setIsLibraryComposerOpen(false);
+                  }}
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-900/70 text-slate-300"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+            </div>
+
+            {isLibraryComposerOpen ? (
+              <form onSubmit={handleCreateLibraryItem} className="mb-4 space-y-3 rounded-3xl border border-slate-800 bg-slate-900/50 p-4">
+                <select
+                  value={libraryForm.item_type}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                >
+                  {Object.entries(itemTypeMeta).map(([value, meta]) => (
+                    <option key={value} value={value}>
+                      {meta.label}
+                    </option>
+                  ))}
+                </select>
+                <input
+                  value={libraryForm.title}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, title: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                  placeholder="Titulo"
+                />
+                <input
+                  value={libraryForm.url}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, url: event.target.value }))}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                  placeholder="URL opcional"
+                />
+                <textarea
+                  value={libraryForm.body}
+                  onChange={(event) => setLibraryForm((current) => ({ ...current, body: event.target.value }))}
+                  rows={4}
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                  placeholder="Resumo ou observacoes"
+                />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <select
+                    value={libraryForm.status}
+                    onChange={(event) => setLibraryForm((current) => ({ ...current, status: event.target.value as VideoProjectItem["status"] }))}
+                    className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                  >
+                    <option value="open">Aberto</option>
+                    <option value="done">Concluido</option>
+                    <option value="archived">Arquivado</option>
+                  </select>
+                  <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-200">
+                    <input
+                      type="checkbox"
+                      checked={libraryForm.pinned}
+                      onChange={(event) => setLibraryForm((current) => ({ ...current, pinned: event.target.checked }))}
+                    />
+                    Fixado
+                  </label>
+                </div>
+                <button
+                  type="submit"
+                  className="inline-flex items-center gap-2 rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white"
+                >
+                  <Plus className="h-4 w-4" />
+                  Criar elemento
+                </button>
+              </form>
+            ) : null}
+
+            <div className="space-y-4">
+              <div className="relative">
+                <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+                <input
+                  value={librarySearch}
+                  onChange={(event) => setLibrarySearch(event.target.value)}
+                  placeholder="Buscar por titulo, corpo ou URL"
+                  className="w-full rounded-2xl border border-slate-800 bg-slate-900/80 py-3 pl-10 pr-4 text-sm text-slate-100 outline-none"
+                />
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  onClick={() => setLibraryFilter("all")}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium",
+                    libraryFilter === "all" ? "border-sky-500/30 bg-sky-500/10 text-sky-100" : "border-slate-800 bg-slate-900/70 text-slate-400"
+                  )}
+                >
+                  Todos
+                </button>
+                {Object.entries(itemTypeMeta).map(([value, meta]) => (
+                  <button
+                    key={value}
+                    onClick={() => setLibraryFilter(value as VideoProjectItemType)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium",
+                      libraryFilter === value ? "border-sky-500/30 bg-sky-500/10 text-sky-100" : "border-slate-800 bg-slate-900/70 text-slate-400"
+                    )}
+                  >
+                    {meta.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {(["all", "open", "done", "archived"] as const).map((value) => (
+                  <button
+                    key={value}
+                    onClick={() => setLibraryStatusFilter(value)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium",
+                      libraryStatusFilter === value ? "border-sky-500/30 bg-sky-500/10 text-sky-100" : "border-slate-800 bg-slate-900/70 text-slate-400"
+                    )}
+                  >
+                    {value === "all" ? "Status" : itemStatusMeta[value].label}
+                  </button>
+                ))}
+                <button
+                  onClick={() => setLibraryPinnedOnly((current) => !current)}
+                  className={cn(
+                    "rounded-full border px-3 py-1.5 text-xs font-medium",
+                    libraryPinnedOnly ? "border-amber-500/30 bg-amber-500/10 text-amber-100" : "border-slate-800 bg-slate-900/70 text-slate-400"
+                  )}
+                >
+                  So fixados
+                </button>
+                <button
+                  onClick={() => setLibraryGroupBy((current) => (current === "type" ? "status" : "type"))}
+                  className="rounded-full border border-slate-800 bg-slate-900/70 px-3 py-1.5 text-xs font-medium text-slate-300"
+                >
+                  Agrupar por {libraryGroupBy === "type" ? "status" : "tipo"}
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              {groupedItems.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/40 px-6 py-12 text-center text-sm text-slate-500">
+                  Nenhum item nesta combinacao de filtros.
+                </div>
+              ) : (
+                groupedItems.map((group) => (
+                  <section key={group.key} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">{group.label}</div>
+                      <div className="text-xs text-slate-600">{group.items.length}</div>
+                    </div>
+                    <div className="space-y-2">
+                      {group.items.map((item) => {
+                        const meta = itemTypeMeta[item.item_type];
+                        const Icon = meta.icon;
+                        const isEditing = editingItemId === item.id;
+                        const isExpanded = expandedItemId === item.id || isEditing;
+                        const summary = item.body?.trim() ? item.body.trim().slice(0, 120) : item.url || "Sem detalhes.";
+
+                        return (
+                          <div key={item.id} className="rounded-2xl border border-slate-800 bg-slate-900/55 p-3">
+                            <div className="flex items-start gap-3">
+                              <button
+                                onClick={() => setExpandedItemId((current) => (current === item.id ? null : item.id))}
+                                className="flex min-w-0 flex-1 items-start gap-3 text-left"
+                              >
+                                <span className="rounded-2xl border border-slate-800 bg-slate-950/80 p-2 text-sky-300">
+                                  <Icon className="h-4 w-4" />
+                                </span>
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <div className="truncate text-sm font-semibold text-white">{item.title || "Sem titulo"}</div>
+                                    <span className="rounded-full border border-slate-800 px-2 py-0.5 text-[11px] text-slate-400">{meta.label}</span>
+                                    <span className={cn("rounded-full border px-2 py-0.5 text-[11px] font-medium", itemStatusMeta[item.status].className)}>
+                                      {itemStatusMeta[item.status].label}
+                                    </span>
+                                  </div>
+                                  <div className="mt-1 line-clamp-2 text-xs text-slate-400">{summary}</div>
+                                </div>
+                              </button>
+                              <div className="flex items-center gap-1">
+                                <button
+                                  onClick={() => handleQuickUpdateItem(item.id, { pinned: !item.pinned })}
+                                  className="rounded-full border border-slate-700 bg-slate-950/70 p-2 text-slate-300"
+                                >
+                                  {item.pinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+                                </button>
+                                <button
+                                  onClick={() => handleStartEditingItem(item)}
+                                  className="rounded-full border border-slate-700 bg-slate-950/70 px-3 py-2 text-xs text-slate-300"
+                                >
+                                  Editar
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteItem(item.id)}
+                                  className="rounded-full border border-rose-900/70 bg-rose-950/20 p-2 text-rose-200"
+                                >
+                                  <Trash2 className="h-3.5 w-3.5" />
+                                </button>
+                              </div>
+                            </div>
+
+                            {isExpanded ? (
+                              <div className="mt-3 border-t border-slate-800 pt-3">
+                                {isEditing ? (
+                                  <div className="space-y-3">
+                                    <select
+                                      value={editingItemDraft.item_type}
+                                      onChange={(event) => setEditingItemDraft((current) => ({ ...current, item_type: event.target.value as VideoProjectItemType }))}
+                                      className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                                    >
+                                      {Object.entries(itemTypeMeta).map(([value, metaOption]) => (
+                                        <option key={value} value={value}>
+                                          {metaOption.label}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      value={editingItemDraft.title}
+                                      onChange={(event) => setEditingItemDraft((current) => ({ ...current, title: event.target.value }))}
+                                      className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                                    />
+                                    <input
+                                      value={editingItemDraft.url}
+                                      onChange={(event) => setEditingItemDraft((current) => ({ ...current, url: event.target.value }))}
+                                      className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                                      placeholder="URL"
+                                    />
+                                    <textarea
+                                      value={editingItemDraft.body}
+                                      onChange={(event) => setEditingItemDraft((current) => ({ ...current, body: event.target.value }))}
+                                      rows={4}
+                                      className="w-full rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                                    />
+                                    <div className="grid gap-3 sm:grid-cols-2">
+                                      <select
+                                        value={editingItemDraft.status}
+                                        onChange={(event) => setEditingItemDraft((current) => ({ ...current, status: event.target.value as VideoProjectItem["status"] }))}
+                                        className="rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-100 outline-none"
+                                      >
+                                        <option value="open">Aberto</option>
+                                        <option value="done">Concluido</option>
+                                        <option value="archived">Arquivado</option>
+                                      </select>
+                                      <label className="flex items-center gap-2 rounded-2xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-sm text-slate-200">
+                                        <input
+                                          type="checkbox"
+                                          checked={editingItemDraft.pinned}
+                                          onChange={(event) => setEditingItemDraft((current) => ({ ...current, pinned: event.target.checked }))}
+                                        />
+                                        Fixado
+                                      </label>
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <button onClick={handleSaveEditingItem} className="rounded-full bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">
+                                        Salvar
+                                      </button>
+                                      <button onClick={() => setEditingItemId(null)} className="rounded-full border border-slate-700 px-4 py-2 text-sm text-slate-300">
+                                        Cancelar
+                                      </button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {item.body ? <p className="whitespace-pre-wrap text-sm leading-relaxed text-slate-300">{item.body}</p> : null}
+                                    {item.url ? (
+                                      <a href={item.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-sm text-sky-300 hover:underline">
+                                        <Link2 className="h-4 w-4" />
+                                        {item.url}
+                                      </a>
+                                    ) : null}
+                                    <div className="flex flex-wrap gap-2">
+                                      {(["open", "done", "archived"] as const).map((statusValue) => (
+                                        <button
+                                          key={statusValue}
+                                          onClick={() => handleQuickUpdateItem(item.id, { status: statusValue })}
+                                          className={cn(
+                                            "rounded-full border px-2.5 py-1 text-xs font-medium",
+                                            item.status === statusValue ? itemStatusMeta[statusValue].className : "border-slate-800 bg-slate-950/70 text-slate-400"
+                                          )}
+                                        >
+                                          {itemStatusMeta[statusValue].label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
