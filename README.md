@@ -1,4 +1,4 @@
-# Dark Content Radar
+# Content Radar
 
 Portal de inteligência de conteúdo para encontrar oportunidades editoriais a partir de vídeos (Shorts) e notícias.
 
