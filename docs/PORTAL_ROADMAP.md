@@ -1,35 +1,66 @@
-# Portal Roadmap
+# Content Radar Roadmap
 
-## Visao futura
+## Direção
 
-O projeto deve evoluir de radar de videos para portal de inteligencia de conteudo. A unidade principal deixa de ser apenas um video do YouTube e passa a ser um topico ou assunto que pode receber sinais de varias fontes.
+Content Radar deve continuar sendo uma ferramenta de **descoberta e preparação de referências**, não uma suíte de produção de vídeos.
 
-Fluxo futuro desejado:
+Fluxo principal:
 
-`source collection -> topic clustering -> opportunity scoring -> brief -> roteiro -> producao`
+```text
+coleta -> Radar -> Biblioteca/transcrição -> Ideia -> trabalho manual fora do app
+```
 
-## Entidades futuras
+## Prioridades
 
-- `source_items`: itens brutos coletados de YouTube, X/Twitter, Reddit, Google Trends, RSS e outras fontes.
-- `topics`: assuntos consolidados a partir de varios sinais.
-- `topic_items`: tabela de associacao entre topicos e itens de origem.
-- `content_opportunities`: oportunidades priorizadas para producao.
-- `content_briefs`: briefs editoriais derivados das oportunidades.
-- `scripts`: roteiros gerados ou produzidos manualmente.
-- `publication_tracking`: acompanhamento de producao, publicacao e performance.
+### 1. Melhor descoberta
 
-## Fontes futuras
+Evoluir a capacidade do Radar de encontrar sinais úteis:
 
-- YouTube
-- X/Twitter
-- Reddit
-- Google Trends
-- RSS/noticias
-- Product Hunt/Hacker News para IA e tecnologia
+- YouTube;
+- Google News/RSS;
+- Reddit;
+- Google Trends;
+- outras fontes apenas quando ajudarem a descobrir assuntos.
 
-## Compatibilidade com o presente
+### 2. Melhor contexto de oportunidade
 
-- Os videos atuais do YouTube serao tratados futuramente como `source_items`.
-- `videos` e `ai_video_analysis` continuam sendo o modelo operacional atual.
-- Nenhuma das tabelas futuras sera implementada nesta etapa.
-- O objetivo agora e preparar o contrato de analise, o score e a interface para uma transicao gradual.
+Sem transformar isso em análise automática de roteiro, melhorar sinais como:
+
+- views/dia;
+- desempenho relativo ao canal quando os dados estiverem disponíveis;
+- recorrência de um assunto em fontes diferentes;
+- recência;
+- filtros e busca.
+
+### 3. Biblioteca de referências
+
+Continuar melhorando a captura de vídeos e transcrições:
+
+- captions do YouTube;
+- fallback por áudio;
+- modo de máxima fidelidade;
+- timestamps;
+- histórico de versões;
+- pesquisa dentro das transcrições;
+- exportação simples.
+
+### 4. Ideias leves
+
+Manter apenas organização simples de ideias e associação futura com referências quando isso puder ser feito sem recriar um workspace de produção.
+
+## Não é direção atual
+
+Não priorizar:
+
+- geração automática de roteiros;
+- comparação automática de roteiros;
+- análise estrutural por IA;
+- editor rico de roteiro;
+- thumbnails;
+- música;
+- boards/Canva;
+- pipeline de produção;
+- publicação;
+- tracking de performance pós-publicação.
+
+Essas tarefas podem ser feitas por ferramentas especializadas. O Content Radar deve preparar o material para elas.
