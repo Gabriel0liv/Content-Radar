@@ -4,6 +4,7 @@ from src.services.youtube_reference_importer import (
     YouTubeReferenceImporter
 )
 
+
 def test_merge_overlapping_text():
     print("Running test_merge_overlapping_text...")
 
@@ -42,6 +43,7 @@ def test_merge_overlapping_text():
     assert res == curr, f"Expected '{curr}', got '{res}'"
     print("✓ No Overlap passed")
 
+
 def test_rolling_captions_chain():
     print("\nRunning test_rolling_captions_chain...")
     # Chain: "A B C" -> "B C D" -> "C D E"
@@ -62,11 +64,11 @@ def test_rolling_captions_chain():
     assert final == "A B C D E", f"Expected 'A B C D E', got '{final}'"
     print("✓ Rolling captions chain simulation passed")
 
+
 def test_parse_vtt_and_build_clean_full_text():
     print("\nRunning test_parse_vtt_and_build_clean_full_text...")
     importer = YouTubeReferenceImporter()
 
-    # Simulated VTT content representing rolling captions
     vtt_content = """WEBVTT
 Kind: captions
 Language: pt
@@ -80,19 +82,14 @@ B C D
 00:00:03.000 --> 00:00:05.000
 C D E
 """
-    # 1. Test parse_vtt
     parsed_segments = importer.parse_vtt(vtt_content)
-    
-    # We expect the segments to have been merged into a single segment
-    # since they are close in time (1s differences) and have large overlaps.
+
     assert len(parsed_segments) == 1, f"Expected 1 merged segment, got {len(parsed_segments)}"
     assert parsed_segments[0]["text"] == "A B C D E", f"Expected 'A B C D E', got '{parsed_segments[0]['text']}'"
     assert parsed_segments[0]["start_time"] == 1.0
     assert parsed_segments[0]["end_time"] == 5.0
     print("✓ parse_vtt merging passed")
 
-    # 2. Test build_clean_full_text on raw segments (if we pass them directly)
-    # Let's say we have raw segments that were NOT merged yet
     raw_segments = [
         {"segment_index": 0, "start_time": 1.0, "end_time": 3.0, "text": "A B C"},
         {"segment_index": 1, "start_time": 2.0, "end_time": 4.0, "text": "B C D"},
@@ -102,93 +99,121 @@ C D E
     assert full_text == "A B C D E", f"Expected 'A B C D E', got '{full_text}'"
     print("✓ build_clean_full_text passed")
 
+
+def test_literal_repetition_is_preserved():
+    """Repeated words in separate, non-overlapping cues are real speech, not rolling-caption noise."""
+    importer = YouTubeReferenceImporter()
+    vtt_content = """WEBVTT
+Kind: captions
+Language: pt
+
+00:00:01.000 --> 00:00:02.000
+não não espera
+
+00:00:02.500 --> 00:00:04.000
+não não é isso
+"""
+    parsed_segments = importer.parse_vtt(vtt_content)
+    assert len(parsed_segments) == 2
+    assert importer.build_clean_full_text(parsed_segments) == "não não espera não não é isso"
+
+
+def test_audio_transcription_result_shape():
+    """The audio path must produce transcript-ready segments without rewriting the recognized speech."""
+    importer = YouTubeReferenceImporter()
+    normalized = importer.normalize_audio_transcription_segments([
+        {"start": 0.0, "end": 1.2, "text": " então então eu fui "},
+        {"start": 1.2, "end": 2.4, "text": " e voltei "},
+    ])
+    assert normalized == [
+        {"segment_index": 0, "start_time": 0.0, "end_time": 1.2, "text": "então então eu fui"},
+        {"segment_index": 1, "start_time": 1.2, "end_time": 2.4, "text": "e voltei"},
+    ]
+    assert importer.build_literal_full_text(normalized) == "então então eu fui e voltei"
+
+
+def test_transcription_mode_schema():
+    from src.schemas.references import YouTubeUrlImportRequest
+
+    quick = YouTubeUrlImportRequest(url="https://youtu.be/dQw4w9WgXcQ")
+    assert quick.transcription_mode == "auto"
+
+    fidelity = YouTubeUrlImportRequest(
+        url="https://youtu.be/dQw4w9WgXcQ",
+        transcription_mode="max_fidelity",
+    )
+    assert fidelity.transcription_mode == "max_fidelity"
+
+
 def test_transcript_versioning():
     print("\nRunning test_transcript_versioning (DB integration)...")
     from src.db.session import SessionLocal
     from src.services.references_service import ReferencesService
     from src.schemas.references import ReferenceSourceCreate, TranscriptCreate
-    from src.models.reference import ReferenceSource
 
     db = SessionLocal()
     service = ReferencesService(db)
 
-    # 1. Create a temporary ReferenceSource
     source_in = ReferenceSourceCreate(
         source_type="manual",
         source_url="https://example.com/test-versioning",
         title="Test Transcript Versioning",
         status="new"
     )
-    # Use repo directly to create source
     db_source = service.repo.create_reference_source(source_in)
     source_id = db_source.id
     print(f"Created temp reference source with ID {source_id}")
 
     try:
-        # 2. Add first manual transcript
         payload1 = TranscriptCreate(
             language="pt",
             source_method="manual",
             full_text="Texto da transcrição v1"
         )
         t1 = service.create_manual_transcript(source_id, payload1)
-        print(f"Transcript 1 created: ID={t1.id}, version={t1.version_number}, active={t1.is_active}")
         assert t1.version_number == 1
         assert t1.is_active is True
         assert t1.duplicate_of_transcript_id is None
 
-        # 3. Add second manual transcript with different text
         payload2 = TranscriptCreate(
             language="pt",
             source_method="manual",
             full_text="Texto da transcrição v2 (diferente)"
         )
         t2 = service.create_manual_transcript(source_id, payload2)
-        print(f"Transcript 2 created: ID={t2.id}, version={t2.version_number}, active={t2.is_active}")
         assert t2.version_number == 2
         assert t2.is_active is True
         assert t2.duplicate_of_transcript_id is None
 
-        # Refresh t1 to see if it was deactivated
         db.refresh(t1)
         assert t1.is_active is False
-        print("✓ Transcript 1 successfully deactivated")
 
-        # 4. Add third manual transcript with the SAME text as v1
         payload3 = TranscriptCreate(
             language="pt",
             source_method="manual",
-            full_text="Texto da transcrição v1" # Same as t1
+            full_text="Texto da transcrição v1"
         )
         t3 = service.create_manual_transcript(source_id, payload3)
-        print(f"Transcript 3 created: ID={t3.id}, version={t3.version_number}, active={t3.is_active}, duplicate_of={t3.duplicate_of_transcript_id}")
         assert t3.version_number == 3
         assert t3.is_active is True
         assert t3.duplicate_of_transcript_id == t1.id
 
-        # Refresh t2 to check if it was deactivated
         db.refresh(t2)
         assert t2.is_active is False
-        print("✓ Transcript 2 successfully deactivated")
 
-        # 5. List transcripts for the source and ensure they are all kept and returned
         transcripts = service.get_transcripts_for_source(source_id)
         assert len(transcripts) == 3
-        print("✓ All 3 versions are successfully kept in the database")
 
     finally:
-        # Clean up
-        print("Cleaning up temp reference source...")
         db.delete(db_source)
         db.commit()
         db.close()
-    print("✓ test_transcript_versioning passed")
+
 
 def test_youtube_url_validation():
     print("\nRunning test_youtube_url_validation...")
     from src.schemas.references import extract_youtube_video_id
 
-    # 1. Valid URLs
     valid_urls = [
         "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
         "http://youtube.com/watch?v=dQw4w9WgXcQ",
@@ -200,9 +225,7 @@ def test_youtube_url_validation():
     for url in valid_urls:
         video_id = extract_youtube_video_id(url)
         assert video_id == "dQw4w9WgXcQ", f"Expected 'dQw4w9WgXcQ' for {url}, got '{video_id}'"
-    print("✓ Valid URLs successfully extracted")
 
-    # 2. Invalid channel/profile URLs
     invalid_channels = [
         "https://www.youtube.com/@GabrielOliv",
         "youtube.com/@SomeUser",
@@ -216,9 +239,7 @@ def test_youtube_url_validation():
             assert False, f"Expected ValueError for channel URL: {url}"
         except ValueError as e:
             assert "canais ou perfis" in str(e), f"Unexpected error message: {e}"
-    print("✓ Channel URLs successfully rejected")
 
-    # 3. Invalid playlist URLs
     invalid_playlists = [
         "https://www.youtube.com/playlist?list=PLB03EA954E5E1E8B8",
         "youtube.com/playlist?list=PLB03EA954E5E1E8B8"
@@ -229,7 +250,7 @@ def test_youtube_url_validation():
             assert False, f"Expected ValueError for playlist URL: {url}"
         except ValueError as e:
             assert "playlists" in str(e), f"Unexpected error message: {e}"
-    print("✓ Playlist URLs successfully rejected")
+
 
 if __name__ == "__main__":
     try:
@@ -237,6 +258,9 @@ if __name__ == "__main__":
         test_merge_overlapping_text()
         test_rolling_captions_chain()
         test_parse_vtt_and_build_clean_full_text()
+        test_literal_repetition_is_preserved()
+        test_audio_transcription_result_shape()
+        test_transcription_mode_schema()
         test_transcript_versioning()
         print("\nAll tests passed successfully!")
     except AssertionError as e:
