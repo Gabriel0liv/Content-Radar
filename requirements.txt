@@ -22,3 +22,5 @@ pydantic-settings
 yt-dlp
 httpx
 
+# High-fidelity audio transcription fallback
+faster-whisper
