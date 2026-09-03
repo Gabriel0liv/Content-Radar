@@ -148,8 +148,6 @@ class YouTubeReferenceImporter:
                 cleaned.append(segment.copy())
                 continue
             previous = cleaned[-1]
-            # Rolling captions overlap in time. Consecutive cues that do not overlap
-            # are kept verbatim, so real repetitions such as "não não" survive.
             if segment["start_time"] < previous["end_time"]:
                 new_part = merge_overlapping_text(previous["text"], segment["text"])
                 overlap_words = len(segment["text"].split()) - len(new_part.split())
@@ -160,10 +158,7 @@ class YouTubeReferenceImporter:
                     continue
             cleaned.append(segment.copy())
 
-        return [
-            {"segment_index": idx, **segment}
-            for idx, segment in enumerate(cleaned)
-        ]
+        return [{"segment_index": idx, **segment} for idx, segment in enumerate(cleaned)]
 
     def build_clean_full_text(self, segments: List[Dict[str, Any]]) -> str:
         if not segments:
@@ -182,7 +177,8 @@ class YouTubeReferenceImporter:
                 and previous.get("end_time") is not None
                 and segment["start_time"] < previous["end_time"]
             ):
-                new_part = merge_overlapping_text(result[-1], text)
+                accumulated = " ".join(result)
+                new_part = merge_overlapping_text(accumulated, text)
                 if new_part:
                     result.append(new_part)
             else:
