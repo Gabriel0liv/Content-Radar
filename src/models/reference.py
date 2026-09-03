@@ -11,6 +11,7 @@ class ReferenceSource(Base):
     source_type = Column(Text, nullable=False)
     source_url = Column(Text, nullable=False)
     external_id = Column(Text, nullable=True)
+    youtube_video_id = Column(Text, nullable=True)
     title = Column(Text, nullable=False)
     channel_title = Column(Text, nullable=True)
     channel_id = Column(Text, nullable=True)
@@ -27,7 +28,6 @@ class ReferenceSource(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # Relationships
     import_jobs = relationship("ReferenceImportJob", back_populates="reference_source", cascade="all, delete-orphan")
     transcripts = relationship("Transcript", back_populates="reference_source", cascade="all, delete-orphan")
 
@@ -37,6 +37,7 @@ class ReferenceSource(Base):
         UniqueConstraint("source_type", "external_id", name="unique_reference_sources_source_type_external_id"),
         Index("idx_reference_sources_source_type", source_type),
         Index("idx_reference_sources_external_id", external_id),
+        Index("idx_reference_sources_youtube_video_id", youtube_video_id),
         Index("idx_reference_sources_status", status),
         Index("idx_reference_sources_channel_title", channel_title),
         Index("idx_reference_sources_created_at_desc", created_at.desc()),
@@ -59,7 +60,6 @@ class ReferenceImportJob(Base):
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
 
-    # Relationships
     reference_source = relationship("ReferenceSource", back_populates="import_jobs")
     transcripts = relationship("Transcript", back_populates="import_job")
 
@@ -85,13 +85,10 @@ class Transcript(Base):
     vtt_text = Column(Text, nullable=True)
     raw_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-    # Versioning columns
     version_number = Column(Integer, nullable=False, default=1, server_default="1")
     is_active = Column(Boolean, nullable=False, default=False, server_default="false")
     duplicate_of_transcript_id = Column(BigInteger, ForeignKey("transcripts.id", ondelete="SET NULL"), nullable=True)
 
-    # Relationships
     reference_source = relationship("ReferenceSource", back_populates="transcripts")
     import_job = relationship("ReferenceImportJob", back_populates="transcripts")
     segments = relationship("TranscriptSegment", back_populates="transcript", cascade="all, delete-orphan")
@@ -118,7 +115,6 @@ class TranscriptSegment(Base):
     tokens_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     transcript = relationship("Transcript", back_populates="segments")
 
     __table_args__ = (
