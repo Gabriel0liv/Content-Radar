@@ -1,13 +1,13 @@
-import yt_dlp
-import httpx
 import re
 from typing import Dict, Any, List, Optional, Tuple
 
+import httpx
+import yt_dlp
+
+from src.services.audio_transcriber import AudioTranscriber
+
+
 def merge_overlapping_text(previous_text: str, current_text: str) -> str:
-    """
-    Compares the suffix of previous_text with the prefix of current_text,
-    finds the largest overlap, and returns only the new part of current_text.
-    """
     if not previous_text:
         return current_text
     if not current_text:
@@ -16,274 +16,207 @@ def merge_overlapping_text(previous_text: str, current_text: str) -> str:
     prev_words = previous_text.split()
     curr_words = current_text.split()
 
-    if not prev_words:
-        return current_text
-    if not curr_words:
-        return ""
-
-    def clean(w: str) -> str:
-        return w.strip(".,!?;;:\"'()[]{}*-–—").lower()
+    def clean(word: str) -> str:
+        return word.strip(".,!?;;:\"'()[]{}*-–—").lower()
 
     prev_cleaned = [clean(w) for w in prev_words]
     curr_cleaned = [clean(w) for w in curr_words]
-
-    max_overlap = min(len(prev_cleaned), len(curr_cleaned))
-    for k in range(max_overlap, 0, -1):
-        if prev_cleaned[-k:] == curr_cleaned[:k]:
-            return " ".join(curr_words[k:])
-
+    for size in range(min(len(prev_cleaned), len(curr_cleaned)), 0, -1):
+        if prev_cleaned[-size:] == curr_cleaned[:size]:
+            return " ".join(curr_words[size:])
     return current_text
+
 
 class YouTubeReferenceImporter:
     def __init__(self, timeout: float = 20.0):
         self.timeout = timeout
 
     def extract_metadata(self, url: str) -> Dict[str, Any]:
-        """
-        Extracts video metadata from YouTube URL using yt-dlp.
-        Throws yt_dlp.utils.DownloadError or other exceptions if video is private, deleted, or network fails.
-        """
-        ydl_opts = {
+        with yt_dlp.YoutubeDL({
             "skip_download": True,
-            "writesubtitles": False,
-            "writeautomaticsub": False,
             "quiet": True,
             "no_warnings": True,
             "extract_flat": False,
             "socket_timeout": 15,
-        }
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        }) as ydl:
             info = ydl.extract_info(url, download=False)
             if not info:
                 raise ValueError("Não foi possível extrair metadados para a URL fornecida.")
             return info
 
     def clean_metadata(self, info: Dict[str, Any]) -> Dict[str, Any]:
-        """
-        Removes large or sensitive keys from info to save a clean raw_json representation.
-        """
-        allowed_keys = {
+        allowed = {
             "id", "title", "description", "channel", "channel_id", "uploader",
             "duration", "view_count", "like_count", "upload_date", "webpage_url",
-            "thumbnail", "language", "availability"
+            "thumbnail", "language", "availability",
         }
-        cleaned = {k: v for k, v in info.items() if k in allowed_keys}
-        
-        # Save list of available subtitle languages for diagnostic purposes
-        if "subtitles" in info and isinstance(info["subtitles"], dict):
-            cleaned["subtitles_languages"] = list(info["subtitles"].keys())
-        else:
-            cleaned["subtitles_languages"] = []
-            
-        if "automatic_captions" in info and isinstance(info["automatic_captions"], dict):
-            cleaned["automatic_captions_languages"] = list(info["automatic_captions"].keys())
-        else:
-            cleaned["automatic_captions_languages"] = []
-            
+        cleaned = {k: v for k, v in info.items() if k in allowed}
+        cleaned["subtitles_languages"] = list((info.get("subtitles") or {}).keys())
+        cleaned["automatic_captions_languages"] = list((info.get("automatic_captions") or {}).keys())
         return cleaned
 
     def select_caption_track(
         self,
         info: Dict[str, Any],
         preferred_languages: List[str],
-        allow_auto_captions: bool
+        allow_auto_captions: bool,
     ) -> Optional[Tuple[str, str, str]]:
-        """
-        Selects caption language, type and url.
-        Returns Tuple[language, caption_type, url] or None.
-        """
         subtitles = info.get("subtitles", {}) or {}
-        auto_captions = info.get("automatic_captions", {}) or {}
+        automatic = info.get("automatic_captions", {}) or {}
 
-        # 1. Check manual captions in order of preference
         for lang in preferred_languages:
-            # Match direct language code or subset (e.g. 'pt' matching 'pt' or 'pt-BR')
-            matched_lang = None
-            if lang in subtitles:
-                matched_lang = lang
-            else:
-                # Try finding sub-keys like pt-BR when 'pt' requested
-                for k in subtitles.keys():
-                    if k.split('-')[0] == lang.split('-')[0]:
-                        matched_lang = k
-                        break
-            
-            if matched_lang:
-                formats = subtitles[matched_lang]
-                # Look for VTT format
-                for fmt in formats:
-                    if fmt.get("ext") == "vtt":
-                        return matched_lang, "manual_caption", fmt.get("url")
-                if formats:
-                    return matched_lang, "manual_caption", formats[0].get("url")
+            matched = self._match_language(subtitles, lang)
+            if matched:
+                return matched, "manual_caption", self._pick_url(subtitles[matched])
 
-        # 2. Check automatic captions in order of preference
         if allow_auto_captions:
             for lang in preferred_languages:
-                matched_lang = None
-                if lang in auto_captions:
-                    matched_lang = lang
-                else:
-                    for k in auto_captions.keys():
-                        if k.split('-')[0] == lang.split('-')[0]:
-                            matched_lang = k
-                            break
-
-                if matched_lang:
-                    formats = auto_captions[matched_lang]
-                    for fmt in formats:
-                        if fmt.get("ext") == "vtt":
-                            return matched_lang, "auto_caption", fmt.get("url")
-                    if formats:
-                        return matched_lang, "auto_caption", formats[0].get("url")
-
+                matched = self._match_language(automatic, lang)
+                if matched:
+                    return matched, "auto_caption", self._pick_url(automatic[matched])
         return None
 
+    @staticmethod
+    def _match_language(tracks: Dict[str, Any], requested: str) -> Optional[str]:
+        if requested in tracks:
+            return requested
+        base = requested.split("-")[0].lower()
+        return next((key for key in tracks if key.split("-")[0].lower() == base), None)
+
+    @staticmethod
+    def _pick_url(formats: List[Dict[str, Any]]) -> str:
+        for item in formats:
+            if item.get("ext") == "vtt" and item.get("url"):
+                return item["url"]
+        for item in formats:
+            if item.get("url"):
+                return item["url"]
+        raise ValueError("Faixa de legenda sem URL utilizável.")
+
     def fetch_caption_text(self, url: str) -> str:
-        """
-        Downloads the VTT subtitle content from the YouTube URL using httpx.
-        """
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        }
+        headers = {"User-Agent": "Mozilla/5.0"}
         with httpx.Client(timeout=self.timeout) as client:
-            res = client.get(url, headers=headers)
-            res.raise_for_status()
-            return res.text
+            response = client.get(url, headers=headers)
+            response.raise_for_status()
+            return response.text
 
     def parse_vtt(self, vtt_text: str) -> List[Dict[str, Any]]:
-        """
-        Parses a WebVTT file, extracts clean timestamps and content,
-        and applies an overlap-removal algorithm to clean up rolling/auto-captions.
-        """
-        blocks = re.split(r'\n\s*\n', vtt_text)
-        raw_segments = []
-        
         timestamp_pattern = re.compile(
-            r'(\d{2}:\d{2}:\d{2}[.,]\d{3})\s*-->\s*(\d{2}:\d{2}:\d{2}[.,]\d{3})'
+            r'(\d{2}:\d{2}:\d{2}[.,]\d{3}|\d{2}:\d{2}[.,]\d{3})\s*-->\s*'
+            r'(\d{2}:\d{2}:\d{2}[.,]\d{3}|\d{2}:\d{2}[.,]\d{3})'
         )
-        
-        def parse_time(time_str: str) -> float:
-            time_str = time_str.replace(',', '.')
-            parts = time_str.split(':')
+
+        def parse_time(value: str) -> float:
+            parts = value.replace(',', '.').split(':')
             if len(parts) == 3:
                 h, m, s = parts
                 return float(h) * 3600 + float(m) * 60 + float(s)
-            elif len(parts) == 2:
-                m, s = parts
-                return float(m) * 60 + float(s)
-            return 0.0
+            m, s = parts
+            return float(m) * 60 + float(s)
 
-        for block in blocks:
-            lines = [line.strip() for line in block.split('\n') if line.strip()]
-            if not lines:
-                continue
-                
+        raw: List[Dict[str, Any]] = []
+        for block in re.split(r'\n\s*\n', vtt_text):
+            lines = [line.strip() for line in block.splitlines() if line.strip()]
             match = None
-            text_start_idx = 1
-            for idx in range(min(len(lines), 3)):
-                m = timestamp_pattern.search(lines[idx])
-                if m:
-                    match = m
-                    text_start_idx = idx + 1
+            text_start = 0
+            for idx, line in enumerate(lines[:3]):
+                match = timestamp_pattern.search(line)
+                if match:
+                    text_start = idx + 1
                     break
-                    
             if not match:
                 continue
-                
-            start_t = parse_time(match.group(1))
-            end_t = parse_time(match.group(2))
-            
-            text_lines = []
-            for line in lines[text_start_idx:]:
-                if line.startswith('NOTE') or line.startswith('STYLE') or line.startswith('WEBVTT') or line.startswith('Kind:') or line.startswith('Language:'):
+
+            text_parts = []
+            for line in lines[text_start:]:
+                if line.startswith(('NOTE', 'STYLE', 'WEBVTT', 'Kind:', 'Language:')):
                     continue
-                # Strip simple tags like <c>, <b>, <i>, <u>
                 cleaned = re.sub(r'<[^>]+>', '', line).strip()
                 if cleaned:
-                    text_lines.append(cleaned)
-                    
-            text = ' '.join(text_lines).strip()
-            if not text:
+                    text_parts.append(cleaned)
+            text = ' '.join(text_parts).strip()
+            if text:
+                raw.append({
+                    "start_time": parse_time(match.group(1)),
+                    "end_time": parse_time(match.group(2)),
+                    "text": text,
+                })
+
+        cleaned: List[Dict[str, Any]] = []
+        for segment in raw:
+            if not cleaned:
+                cleaned.append(segment.copy())
                 continue
-                
-            raw_segments.append({
-                'start_time': start_t,
-                'end_time': end_t,
-                'text': text
-            })
-            
-        # Clean rolling/auto captions
-        cleaned_segments = []
-        for seg in raw_segments:
-            if not cleaned_segments:
-                cleaned_segments.append(seg)
-                continue
-                
-            prev_seg = cleaned_segments[-1]
-            time_diff = seg['start_time'] - prev_seg['end_time']
-            
-            # Use the merge_overlapping_text helper
-            new_part = merge_overlapping_text(prev_seg['text'], seg['text'])
-            
-            prev_words = prev_seg['text'].split()
-            curr_words = seg['text'].split()
-            new_words = new_part.split()
-            overlap_count = len(curr_words) - len(new_words)
-            
-            # Decide if there is a large overlap
-            has_large_overlap = False
-            if len(curr_words) > 0 and len(prev_words) > 0:
-                if (overlap_count >= 3 or 
-                    overlap_count / len(prev_words) >= 0.5 or 
-                    overlap_count / len(curr_words) >= 0.5):
-                    has_large_overlap = True
-            
-            # If they are very close in time and have a large overlap, merge/update
-            if time_diff < 1.5 and has_large_overlap:
-                if new_part.strip():
-                    prev_seg['text'] = prev_seg['text'] + " " + new_part.strip()
-                prev_seg['end_time'] = max(prev_seg['end_time'], seg['end_time'])
-            else:
-                cleaned_segments.append(seg)
-            
-        # Format final segment list
-        final_segments = []
-        for idx, seg in enumerate(cleaned_segments):
-            final_segments.append({
-                'segment_index': idx,
-                'start_time': seg['start_time'],
-                'end_time': seg['end_time'],
-                'text': seg['text']
-            })
-            
-        return final_segments
+            previous = cleaned[-1]
+            # Rolling captions overlap in time. Consecutive cues that do not overlap
+            # are kept verbatim, so real repetitions such as "não não" survive.
+            if segment["start_time"] < previous["end_time"]:
+                new_part = merge_overlapping_text(previous["text"], segment["text"])
+                overlap_words = len(segment["text"].split()) - len(new_part.split())
+                if overlap_words >= 2:
+                    if new_part.strip():
+                        previous["text"] += " " + new_part.strip()
+                    previous["end_time"] = max(previous["end_time"], segment["end_time"])
+                    continue
+            cleaned.append(segment.copy())
+
+        return [
+            {"segment_index": idx, **segment}
+            for idx, segment in enumerate(cleaned)
+        ]
 
     def build_clean_full_text(self, segments: List[Dict[str, Any]]) -> str:
-        """
-        Sorts segments by start_time, iterates through them, and builds a clean
-        full_text by appending only the new part of each segment using word overlap detection.
-        """
         if not segments:
             return ""
-
-        # Sort by start_time
-        sorted_segments = sorted(segments, key=lambda s: s.get('start_time', 0.0))
-
-        full_words = []
-        for seg in sorted_segments:
-            text = seg.get('text', '').strip()
+        ordered = sorted(segments, key=lambda item: item.get("start_time", 0.0))
+        result: List[str] = []
+        previous = None
+        for segment in ordered:
+            text = segment.get("text", "").strip()
             if not text:
                 continue
-            
-            if not full_words:
-                full_words.extend(text.split())
+            if previous is None:
+                result.append(text)
+            elif (
+                segment.get("start_time") is not None
+                and previous.get("end_time") is not None
+                and segment["start_time"] < previous["end_time"]
+            ):
+                new_part = merge_overlapping_text(result[-1], text)
+                if new_part:
+                    result.append(new_part)
+            else:
+                result.append(text)
+            previous = segment
+        return " ".join(result)
+
+    def normalize_audio_transcription_segments(self, segments: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        normalized = []
+        for segment in segments:
+            text = str(segment.get("text", "")).strip()
+            if not text:
                 continue
+            normalized.append({
+                "segment_index": len(normalized),
+                "start_time": float(segment.get("start", 0.0)),
+                "end_time": float(segment.get("end", segment.get("start", 0.0))),
+                "text": text,
+            })
+        return normalized
 
-            # To keep it efficient, compare with the last 100 words of the accumulated text
-            prev_chunk = " ".join(full_words[-100:])
-            new_part = merge_overlapping_text(prev_chunk, text)
-            if new_part:
-                full_words.extend(new_part.split())
+    def build_literal_full_text(self, segments: List[Dict[str, Any]]) -> str:
+        ordered = sorted(segments, key=lambda item: item.get("start_time", 0.0))
+        return " ".join(item["text"].strip() for item in ordered if item.get("text", "").strip())
 
-        return " ".join(full_words)
+    def transcribe_audio_from_youtube(self, url: str) -> Dict[str, Any]:
+        raw = AudioTranscriber().transcribe_youtube(url)
+        segments = self.normalize_audio_transcription_segments(raw["segments"])
+        if not segments:
+            raise RuntimeError("Nenhuma fala foi reconhecida no áudio.")
+        return {
+            "language": raw.get("language"),
+            "language_probability": raw.get("language_probability"),
+            "model": raw.get("model"),
+            "segments": segments,
+            "full_text": self.build_literal_full_text(segments),
+        }
