@@ -3,10 +3,10 @@ from datetime import datetime
 from typing import Optional, List, Dict, Any, Literal
 import re
 
-# Regex for YouTube video id extraction
 YT_VIDEO_ID_REGEX = re.compile(
     r'(?:https?://)?(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/|youtube\.com/shorts/)([a-zA-Z0-9_-]{11})'
 )
+YT_VIDEO_ID_ONLY_REGEX = re.compile(r'^[a-zA-Z0-9_-]{11}$')
 
 
 def extract_youtube_video_id(url: str) -> str:
@@ -21,6 +21,15 @@ def extract_youtube_video_id(url: str) -> str:
     if not match:
         raise ValueError("URL do YouTube inválida ou formato não suportado. Use links de vídeos normais ou Shorts.")
     return match.group(1)
+
+
+def validate_youtube_video_id(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    normalized = value.strip()
+    if not YT_VIDEO_ID_ONLY_REGEX.fullmatch(normalized):
+        raise ValueError("youtube_video_id deve conter exatamente um ID de vídeo válido do YouTube")
+    return normalized
 
 
 class YouTubeUrlImportRequest(BaseModel):
@@ -47,6 +56,7 @@ class ReferenceSourceCreate(BaseModel):
     source_type: Literal["youtube_video", "manual"]
     source_url: str
     external_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
     title: str
     channel_title: Optional[str] = None
     channel_id: Optional[str] = None
@@ -61,6 +71,11 @@ class ReferenceSourceCreate(BaseModel):
     notes: Optional[str] = None
     raw_json: Optional[Dict[str, Any]] = None
 
+    @field_validator("youtube_video_id")
+    @classmethod
+    def validate_canonical_youtube_video_id(cls, value: Optional[str]) -> Optional[str]:
+        return validate_youtube_video_id(value)
+
 
 class ReferenceSourceUpdate(BaseModel):
     title: Optional[str] = None
@@ -69,9 +84,16 @@ class ReferenceSourceUpdate(BaseModel):
     status: Optional[Literal["new", "importing", "transcribed", "needs_audio_transcription", "failed", "archived"]] = None
     notes: Optional[str] = None
     source_url: Optional[str] = None
+    external_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
     view_count: Optional[int] = None
     like_count: Optional[int] = None
     raw_json: Optional[Dict[str, Any]] = None
+
+    @field_validator("youtube_video_id")
+    @classmethod
+    def validate_canonical_youtube_video_id(cls, value: Optional[str]) -> Optional[str]:
+        return validate_youtube_video_id(value)
 
 
 class ReferenceSourceRead(BaseModel):
@@ -79,6 +101,7 @@ class ReferenceSourceRead(BaseModel):
     source_type: str
     source_url: str
     external_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
     title: str
     channel_title: Optional[str] = None
     channel_id: Optional[str] = None
