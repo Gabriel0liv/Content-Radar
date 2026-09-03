@@ -10,6 +10,13 @@ class ContentItemBase(BaseModel):
     description: Optional[str] = None
     url: str
     channel_title: Optional[str] = None
+    channel_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+    youtube_category_id: Optional[str] = None
+    youtube_category_name: Optional[str] = None
+    youtube_tags_json: List[str] = []
+    youtube_topics_json: List[str] = []
+    topic_classification_version: Optional[str] = None
     published_at: Optional[datetime] = None
     views: Optional[int] = 0
     likes: Optional[int] = 0
@@ -25,16 +32,9 @@ class ContentItemBase(BaseModel):
     search_run_id: Optional[int] = None
 
 class ContentItemCreate(ContentItemBase):
-    """
-    Schema for content creation/ingestion.
-    Blocks the client (n8n) from defining curation status or notes.
-    """
     pass
 
 class ContentItemIngest(ContentItemCreate):
-    """
-    Alias for content ingestion.
-    """
     pass
 
 class ContentItemUpdate(BaseModel):
@@ -42,6 +42,13 @@ class ContentItemUpdate(BaseModel):
     description: Optional[str] = None
     url: Optional[str] = None
     channel_title: Optional[str] = None
+    channel_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+    youtube_category_id: Optional[str] = None
+    youtube_category_name: Optional[str] = None
+    youtube_tags_json: Optional[List[str]] = None
+    youtube_topics_json: Optional[List[str]] = None
+    topic_classification_version: Optional[str] = None
     views: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
@@ -76,7 +83,6 @@ class ContentItemRead(ContentItemBase):
     class Config:
         from_attributes = True
 
-# Alias for backward compatibility
 ContentItem = ContentItemRead
 
 class ContentItemListResponse(BaseModel):
