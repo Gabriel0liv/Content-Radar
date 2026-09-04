@@ -69,6 +69,15 @@ export function ContentTable({ items, total, loading, filters, setFilter, onSele
                       {item.channel_title && <span>{item.channel_title}</span>}
                       {item.youtube_category_name && <span className="rounded border border-slate-800 bg-slate-950 px-1.5 py-0.5 text-[10px] text-slate-400">YouTube: {item.youtube_category_name}</span>}
                     </div>
+                    {item.detected_topics?.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        {item.detected_topics.slice(0, 4).map((topic) => (
+                          <span key={`${topic.id}-${topic.type}`} className="rounded-full border border-indigo-500/20 bg-indigo-500/10 px-2 py-0.5 text-[10px] font-medium text-indigo-300" title={`${Math.round(topic.confidence * 100)}% · ${topic.source}`}>
+                            {topic.name} <span className="text-indigo-500">{Math.round(topic.confidence * 100)}%</span>
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </td>
                   <td className="px-5 py-4">
                     <span className={cn("inline-flex items-center gap-1.5 rounded border px-2 py-1 text-xs", isYoutube ? "border-rose-500/20 bg-rose-500/10 text-rose-400" : "border-emerald-500/20 bg-emerald-500/10 text-emerald-400")}>
