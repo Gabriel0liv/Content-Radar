@@ -1,8 +1,9 @@
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import exists, func
 from typing import List, Optional, Tuple
 from datetime import datetime, timezone
 from src.models.content_item import ContentItem, ContentItemEvent
+from src.models.topic import ContentItemTopic
 from src.schemas.content_item import ContentItemCreate
 
 class ContentItemsRepository:
@@ -37,6 +38,8 @@ class ContentItemsRepository:
         min_score: Optional[float] = None,
         min_views: Optional[int] = None,
         min_performance_ratio: Optional[float] = None,
+        topic_id: Optional[int] = None,
+        min_topic_confidence: float = 0.0,
         sort_by: Optional[str] = "score",
         sort_order: Optional[str] = "desc",
     ) -> Tuple[List[ContentItem], int]:
@@ -55,6 +58,13 @@ class ContentItemsRepository:
             query = query.filter(ContentItem.views >= min_views)
         if min_performance_ratio is not None:
             query = query.filter(ContentItem.performance_ratio >= min_performance_ratio)
+        if topic_id is not None:
+            topic_match = exists().where(
+                ContentItemTopic.content_item_id == ContentItem.id,
+                ContentItemTopic.topic_id == topic_id,
+                ContentItemTopic.confidence >= min_topic_confidence,
+            )
+            query = query.filter(topic_match)
         if search:
             search_pattern = f"%{search}%"
             query = query.filter(
