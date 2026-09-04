@@ -64,8 +64,27 @@ class ContentItem(Base):
     )
 
     events = relationship("ContentItemEvent", back_populates="content_item", cascade="all, delete-orphan")
+    topic_associations = relationship("ContentItemTopic", back_populates="content_item", cascade="all, delete-orphan")
     search_config = relationship("SearchConfig", back_populates="content_items")
     search_run = relationship("SearchRun", back_populates="content_items")
+
+    @property
+    def detected_topics(self):
+        associations = sorted(
+            list(self.topic_associations or []),
+            key=lambda association: (-(float(association.confidence or 0.0)), association.topic.name if association.topic else ""),
+        )
+        return [
+            {
+                "id": association.topic.id,
+                "name": association.topic.name,
+                "type": association.topic.type,
+                "confidence": float(association.confidence or 0.0),
+                "source": association.source,
+            }
+            for association in associations
+            if association.topic is not None
+        ]
 
 
 class ContentItemEvent(Base):
