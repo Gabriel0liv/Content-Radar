@@ -1,903 +1,249 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
-import {
-  getSearchConfigs,
-  createSearchConfig,
-  updateSearchConfig,
-  runSearchConfig,
-  getSearchConfigRuns
-} from "@/lib/api";
-import {
-  Search,
-  Plus,
-  Play,
-  Edit,
-  History,
-  Loader2,
-  CheckCircle,
-  XCircle,
-  AlertCircle,
-  Save,
-  Trash2,
-  FolderOpen,
-  ChevronRight,
-  RefreshCw,
-  Info
-} from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Edit, Loader2, Play, Plus, RefreshCw, Search, X } from "lucide-react";
 import { toast } from "sonner";
-import { cn } from "@/lib/utils";
-import { formatDate } from "@/lib/format";
 
-interface SearchConfigData {
-  id: number;
-  name: string;
-  description: string | null;
-  status: "active" | "paused" | "archived";
-  language: string;
-  country_code: string;
-  region_code: string | null;
-  days_back: number;
-  min_views: number;
-  max_results_per_query: number;
-  sources_json: string[];
-  keywords_json: string[];
-  negative_keywords_json: string[];
-  youtube_categories_json: string[];
-  created_at: string;
-  updated_at: string;
-}
+import { DiscoveryAutocomplete } from "@/components/search/discovery-autocomplete";
+import { createSearchConfig, getSearchConfigs, runSearchConfig, updateSearchConfig } from "@/lib/api";
+import type { DiscoveryTerm, SearchConfig } from "@/lib/types";
 
-interface SearchRunData {
-  id: number;
-  search_config_id: number;
-  status: "queued" | "running" | "completed" | "failed";
-  trigger_source: string;
-  started_at: string | null;
-  finished_at: string | null;
-  items_found: number;
-  items_inserted: number;
-  items_updated: number;
-  error_message: string | null;
-  created_at: string;
-}
+const emptyForm = {
+  name: "",
+  description: "",
+  language: "pt",
+  country_code: "BR",
+  days_back: 7,
+  min_views: 30000,
+  max_results_per_query: 50,
+  keywords: "",
+  negative_keywords: "",
+  youtube_categories: "",
+  minimum_topic_confidence: 0.7,
+  minimum_performance_ratio: 0,
+};
 
 export default function SearchConfigsPage() {
-  const [configs, setConfigs] = useState<SearchConfigData[]>([]);
+  const [configs, setConfigs] = useState<SearchConfig[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
+  const [editing, setEditing] = useState<SearchConfig | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [form, setForm] = useState(emptyForm);
+  const [includedTerms, setIncludedTerms] = useState<DiscoveryTerm[]>([]);
+  const [excludedTerms, setExcludedTerms] = useState<DiscoveryTerm[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [runningId, setRunningId] = useState<number | null>(null);
 
-  // Active / Selected state
-  const [selectedConfig, setSelectedConfig] = useState<SearchConfigData | null>(null);
-  const [runs, setRuns] = useState<SearchRunData[]>([]);
-  const [loadingRuns, setLoadingRuns] = useState(false);
-  const [lastRuns, setLastRuns] = useState<Record<number, SearchRunData>>({});
-
-  // View state: 'details' | 'form'
-  const [rightView, setRightView] = useState<'details' | 'form'>('details');
-  const [isEditing, setIsEditing] = useState(false); // false for Create, true for Update
-
-  // Form states
-  const [formName, setFormName] = useState("");
-  const [formDescription, setFormDescription] = useState("");
-  const [formStatus, setFormStatus] = useState<"active" | "paused" | "archived">("active");
-  const [formLanguage, setFormLanguage] = useState("pt");
-  const [formCountryCode, setFormCountryCode] = useState("BR");
-  const [formRegionCode, setFormRegionCode] = useState("");
-  const [formDaysBack, setFormDaysBack] = useState(5);
-  const [formMinViews, setFormMinViews] = useState(30000);
-  const [formMaxResults, setFormMaxResults] = useState(50);
-  const [formSources, setFormSources] = useState<string[]>(["youtube", "google_news"]);
-  const [formKeywordsText, setFormKeywordsText] = useState("");
-  const [formNegKeywordsText, setFormNegKeywordsText] = useState("");
-  const [formCategoriesText, setFormCategoriesText] = useState("");
-
-  const [formSubmitting, setFormSubmitting] = useState(false);
-  const [triggeringId, setTriggeringId] = useState<number | null>(null);
-
-  // Fetch configs list
-  const loadConfigs = useCallback(async (autoSelectId?: number) => {
+  const load = useCallback(async () => {
     try {
       setLoading(true);
-      setError(null);
-      const res = await getSearchConfigs();
-      setConfigs(res.configs);
-
-      // Load runs statistics for each config to show the last execution status
-      const lastRunsMap: Record<number, SearchRunData> = {};
-      await Promise.all(
-        res.configs.map(async (c: SearchConfigData) => {
-          try {
-            const configRuns = await getSearchConfigRuns(c.id);
-            if (configRuns && configRuns.length > 0) {
-              lastRunsMap[c.id] = configRuns[0]; // Most recent run
-            }
-          } catch {
-            // Silently skip if one config fails to fetch runs
-          }
-        })
-      );
-      setLastRuns(lastRunsMap);
-
-      // Restore active configuration selection
-      if (autoSelectId) {
-        const found = res.configs.find((c: SearchConfigData) => c.id === autoSelectId);
-        if (found) {
-          setSelectedConfig(found);
-          loadRuns(found.id);
-        }
-      } else if (res.configs.length > 0) {
-        setSelectedConfig(res.configs[0]);
-        loadRuns(res.configs[0].id);
-      } else {
-        setSelectedConfig(null);
-        setRuns([]);
-      }
-    } catch (err: any) {
-      setError(err.message || "Erro ao carregar nichos de pesquisa.");
+      const response = await getSearchConfigs();
+      setConfigs(response.configs);
+    } catch (error: any) {
+      toast.error("Erro ao carregar pesquisas", { description: error.message });
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Fetch runs list for a config
-  const loadRuns = async (configId: number) => {
-    try {
-      setLoadingRuns(true);
-      const runsList = await getSearchConfigRuns(configId);
-      setRuns(runsList);
-    } catch {
-      toast.error("Não foi possível carregar o histórico de buscas");
-    } finally {
-      setLoadingRuns(false);
-    }
+  useEffect(() => { void load(); }, [load]);
+
+  const visibleConfigs = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    if (!needle) return configs;
+    return configs.filter((config) => `${config.name} ${config.description || ""}`.toLowerCase().includes(needle));
+  }, [configs, search]);
+
+  const resetEditor = () => {
+    setEditing(null);
+    setCreating(false);
+    setForm(emptyForm);
+    setIncludedTerms([]);
+    setExcludedTerms([]);
   };
 
-  useEffect(() => {
-    loadConfigs();
-  }, [loadConfigs]);
-
-  const handleSelectConfig = (config: SearchConfigData) => {
-    setSelectedConfig(config);
-    setRightView('details');
-    loadRuns(config.id);
+  const openCreate = () => {
+    resetEditor();
+    setCreating(true);
   };
 
-  // Trigger manual search execution
-  const handleTriggerRun = async (e: React.MouseEvent, config: SearchConfigData) => {
-    e.stopPropagation();
-    if (config.status !== "active") {
-      toast.error("Só é possível rodar buscas para nichos com status 'ATIVO'");
-      return;
-    }
+  const topicPlaceholder = (id: number, name: string): DiscoveryTerm => ({
+    id: -id,
+    normalized_term: name.toLowerCase(),
+    display_name: name,
+    type: "topic",
+    entity_id: id,
+    usage_count: 0,
+    video_count: 0,
+    channel_count: 0,
+    relevance_score: 0,
+    last_seen_at: null,
+  });
 
-    setTriggeringId(config.id);
-    toast.info("Enfileirando busca...", {
-      description: `Iniciando varredura para "${config.name}"`,
+  const openEdit = (config: SearchConfig) => {
+    setEditing(config);
+    setCreating(false);
+    setForm({
+      name: config.name,
+      description: config.description || "",
+      language: config.language || "pt",
+      country_code: config.country_code || "BR",
+      days_back: config.days_back || 7,
+      min_views: config.min_views || 0,
+      max_results_per_query: config.max_results_per_query || 50,
+      keywords: (config.keywords_json || []).join("\n"),
+      negative_keywords: (config.negative_keywords_json || []).join("\n"),
+      youtube_categories: (config.youtube_categories_json || []).join("\n"),
+      minimum_topic_confidence: config.minimum_topic_confidence ?? 0.7,
+      minimum_performance_ratio: config.minimum_performance_ratio ?? 0,
     });
+    setIncludedTerms((config.included_topic_ids || []).map((id) => topicPlaceholder(id, `Tema #${id}`)));
+    setExcludedTerms((config.excluded_topic_ids || []).map((id) => topicPlaceholder(id, `Tema #${id}`)));
+  };
 
+  const lines = (value: string) => value.split(/\n|,/).map((item) => item.trim()).filter(Boolean);
+
+  const save = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!form.name.trim()) return;
+    setSaving(true);
     try {
-      const run = await runSearchConfig(config.id);
-      
-      toast.success("Busca enfileirada com sucesso!", {
-        description: run.error_message || "O workflow do n8n foi acionado para execução em background.",
-      });
-
-      // Reload config runs history
-      loadConfigs(config.id);
-    } catch (err: any) {
-      toast.error("Falha ao iniciar busca", {
-        description: err.message || "Erro de conexão com o servidor",
-      });
+      const payload = {
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        status: editing?.status || "active",
+        language: form.language,
+        country_code: form.country_code,
+        days_back: Number(form.days_back),
+        min_views: Number(form.min_views),
+        max_results_per_query: Number(form.max_results_per_query),
+        sources_json: ["youtube", "google_news"],
+        keywords_json: lines(form.keywords),
+        negative_keywords_json: lines(form.negative_keywords),
+        youtube_categories_json: lines(form.youtube_categories),
+        included_topic_ids: includedTerms.map((term) => term.entity_id).filter((id): id is number => id !== null),
+        excluded_topic_ids: excludedTerms.map((term) => term.entity_id).filter((id): id is number => id !== null),
+        minimum_topic_confidence: Number(form.minimum_topic_confidence),
+        minimum_performance_ratio: form.minimum_performance_ratio > 0 ? Number(form.minimum_performance_ratio) : null,
+      };
+      if (editing) await updateSearchConfig(editing.id, payload);
+      else await createSearchConfig(payload);
+      toast.success(editing ? "Pesquisa atualizada" : "Pesquisa criada");
+      resetEditor();
+      await load();
+    } catch (error: any) {
+      toast.error("Não foi possível salvar", { description: error.message });
     } finally {
-      setTriggeringId(null);
+      setSaving(false);
     }
   };
 
-  // Toggle Source Checkbox
-  const handleSourceToggle = (source: string) => {
-    if (formSources.includes(source)) {
-      setFormSources(formSources.filter(s => s !== source));
-    } else {
-      setFormSources([...formSources, source]);
-    }
-  };
-
-  // Open Create Form
-  const handleOpenCreate = () => {
-    setIsEditing(false);
-    setFormName("");
-    setFormDescription("");
-    setFormStatus("active");
-    setFormLanguage("pt");
-    setFormCountryCode("BR");
-    setFormRegionCode("");
-    setFormDaysBack(5);
-    setFormMinViews(30000);
-    setFormMaxResults(50);
-    setFormSources(["youtube", "google_news"]);
-    setFormKeywordsText("");
-    setFormNegKeywordsText("");
-    setFormCategoriesText("");
-
-    setRightView('form');
-  };
-
-  // Open Edit Form
-  const handleOpenEdit = (e: React.MouseEvent, config: SearchConfigData) => {
-    e.stopPropagation();
-    setIsEditing(true);
-    setFormName(config.name);
-    setFormDescription(config.description || "");
-    setFormStatus(config.status);
-    setFormLanguage(config.language);
-    setFormCountryCode(config.country_code);
-    setFormRegionCode(config.region_code || "");
-    setFormDaysBack(config.days_back);
-    setFormMinViews(config.min_views);
-    setFormMaxResults(config.max_results_per_query);
-    setFormSources(config.sources_json || []);
-    setFormKeywordsText(config.keywords_json ? config.keywords_json.join("\n") : "");
-    setFormNegKeywordsText(config.negative_keywords_json ? config.negative_keywords_json.join("\n") : "");
-    setFormCategoriesText(config.youtube_categories_json ? config.youtube_categories_json.join("\n") : "");
-
-    setRightView('form');
-  };
-
-  // Form Submit Handler
-  const handleFormSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!formName.trim()) {
-      toast.error("O nome do nicho é obrigatório");
-      return;
-    }
-
-    const keywords = formKeywordsText
-      .split("\n")
-      .map(k => k.trim())
-      .filter(Boolean);
-
-    if (keywords.length === 0) {
-      toast.error("É necessário informar ao menos uma palavra-chave para a pesquisa");
-      return;
-    }
-
-    const negativeKeywords = formNegKeywordsText
-      .split("\n")
-      .map(k => k.trim())
-      .filter(Boolean);
-
-    const categories = formCategoriesText
-      .split("\n")
-      .map(c => c.trim())
-      .filter(Boolean);
-
-    if (formSources.length === 0) {
-      toast.error("Selecione ao menos uma fonte de busca (YouTube ou Google News)");
-      return;
-    }
-
-    const payload = {
-      name: formName.trim(),
-      description: formDescription.trim() || null,
-      status: formStatus,
-      language: formLanguage.trim(),
-      country_code: formCountryCode.trim(),
-      region_code: formRegionCode.trim() || null,
-      days_back: formDaysBack,
-      min_views: formMinViews,
-      max_results_per_query: formMaxResults,
-      sources_json: formSources,
-      keywords_json: keywords,
-      negative_keywords_json: negativeKeywords,
-      youtube_categories_json: categories,
-    };
-
-    setFormSubmitting(true);
+  const run = async (config: SearchConfig) => {
     try {
-      if (isEditing && selectedConfig) {
-        const updated = await updateSearchConfig(selectedConfig.id, payload);
-        toast.success("Nicho atualizado com sucesso!");
-        loadConfigs(updated.id);
-      } else {
-        const created = await createSearchConfig(payload);
-        toast.success("Nicho de pesquisa criado com sucesso!");
-        loadConfigs(created.id);
-      }
-    } catch (err: any) {
-      toast.error("Erro ao salvar configuração", {
-        description: err.message || "Erro desconhecido",
-      });
+      setRunningId(config.id);
+      await runSearchConfig(config.id);
+      toast.success(`Pesquisa “${config.name}” enviada para execução`);
+    } catch (error: any) {
+      toast.error("Não foi possível executar", { description: error.message });
     } finally {
-      setFormSubmitting(false);
+      setRunningId(null);
     }
   };
 
-  // Status visual badge configs
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "active":
-        return "bg-emerald-500/10 text-emerald-400 border-emerald-500/20";
-      case "paused":
-        return "bg-amber-500/10 text-amber-400 border-amber-500/20";
-      case "archived":
-        return "bg-slate-500/10 text-slate-450 border-slate-500/20";
-      default:
-        return "bg-slate-500/10 text-slate-400 border-slate-500/20";
-    }
-  };
-
-  const getStatusLabel = (status: string) => {
-    switch (status) {
-      case "active": return "Ativo";
-      case "paused": return "Pausado";
-      case "archived": return "Arquivado";
-      default: return status;
-    }
-  };
-
-  const getRunStatusIcon = (status: string) => {
-    switch (status) {
-      case "queued":
-        return <Loader2 className="h-3.5 w-3.5 text-slate-400 animate-pulse" />;
-      case "running":
-        return <Loader2 className="h-3.5 w-3.5 text-blue-400 animate-spin" />;
-      case "completed":
-        return <CheckCircle className="h-3.5 w-3.5 text-emerald-400" />;
-      case "failed":
-        return <XCircle className="h-3.5 w-3.5 text-rose-400" />;
-    }
-  };
-
-  const getRunStatusText = (status: string) => {
-    switch (status) {
-      case "queued": return "Fila (Aguardando)";
-      case "running": return "Executando...";
-      case "completed": return "Sucesso";
-      case "failed": return "Falhou";
-      default: return status;
-    }
-  };
+  const editorOpen = creating || editing !== null;
 
   return (
     <div className="space-y-6">
-      {/* Header section */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-850 pb-5">
+      <div className="flex flex-col gap-4 border-b border-slate-800 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold tracking-tight text-white sm:text-3xl font-sans">
-            Nichos e Fontes de Pesquisa
-          </h2>
-          <p className="mt-1 text-sm text-slate-400">
-            Configure as palavras-chave e parâmetros de raspagem utilizados pelos workflows de inteligência.
-          </p>
+          <h2 className="text-3xl font-bold tracking-tight text-white">Pesquisas</h2>
+          <p className="mt-1 max-w-2xl text-sm text-slate-400">Combine palavras-chave com temas detectados, séries, categorias oficiais e filtros de breakout. A consulta de coleta não precisa ser igual à classificação final.</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={() => loadConfigs(selectedConfig?.id)}
-            className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-800 bg-[#0b101c] hover:bg-slate-900 text-slate-400 hover:text-slate-200 transition-colors"
-            title="Atualizar lista"
-          >
-            <RefreshCw className="h-4.5 w-4.5" />
-          </button>
-          <button
-            onClick={handleOpenCreate}
-            className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500 transition-all select-none"
-          >
-            <Plus className="h-4.5 w-4.5" />
-            <span>Novo Nicho</span>
-          </button>
+        <div className="flex gap-2">
+          <button onClick={() => void load()} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-800 bg-slate-950 text-slate-400 hover:text-white"><RefreshCw className="h-4 w-4" /></button>
+          <button onClick={openCreate} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500"><Plus className="h-4 w-4" /> Nova pesquisa</button>
         </div>
       </div>
 
-      {loading && configs.length === 0 ? (
-        <div className="flex h-[50vh] flex-col items-center justify-center gap-3">
-          <Loader2 className="h-8 w-8 animate-spin text-indigo-500" />
-          <span className="text-sm text-slate-400 font-medium">Carregando configurações de busca...</span>
-        </div>
-      ) : error ? (
-        <div className="rounded-xl border border-rose-950 bg-rose-950/20 p-5 text-rose-200 shadow-md">
-          <div className="flex items-center gap-3">
-            <AlertCircle className="h-6 w-6 text-rose-400" />
-            <div>
-              <h3 className="font-bold text-white">Erro ao conectar à API</h3>
-              <p className="text-xs text-rose-350">{error}</p>
-            </div>
-          </div>
-        </div>
+      <div className="relative max-w-xl">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Filtrar pesquisas salvas..." className="w-full rounded-lg border border-slate-800 bg-slate-950 py-2.5 pl-9 pr-4 text-sm text-slate-200 outline-none focus:border-indigo-500" />
+      </div>
+
+      {loading ? (
+        <div className="flex h-48 items-center justify-center"><Loader2 className="h-7 w-7 animate-spin text-indigo-400" /></div>
+      ) : visibleConfigs.length === 0 ? (
+        <div className="rounded-xl border border-dashed border-slate-800 py-16 text-center text-sm text-slate-500">Nenhuma pesquisa encontrada.</div>
       ) : (
-        <div className="grid gap-6 lg:grid-cols-3 items-start">
-          {/* Left Column: Configurations list */}
-          <div className="space-y-4 lg:col-span-1 max-h-[calc(100vh-12rem)] overflow-y-auto pr-1">
-            {configs.length === 0 ? (
-              <div className="rounded-xl border border-dashed border-slate-800 bg-slate-950/20 p-8 text-center text-slate-500 font-medium">
-                Nenhum nicho cadastrado. Clique em "Novo Nicho" para começar.
-              </div>
-            ) : (
-              configs.map((config) => {
-                const isSelected = selectedConfig?.id === config.id;
-                const lastRun = lastRuns[config.id];
-                const isTriggering = triggeringId === config.id;
-
-                return (
-                  <div
-                    key={config.id}
-                    onClick={() => handleSelectConfig(config)}
-                    className={cn(
-                      "group relative cursor-pointer rounded-xl border p-4.5 transition-all select-none flex flex-col gap-3",
-                      isSelected
-                        ? "border-indigo-500 bg-indigo-500/5 shadow-md shadow-indigo-950/10"
-                        : "border-slate-800/80 bg-[#0b101c]/30 hover:border-slate-700/80 hover:bg-[#0c1222]/50"
-                    )}
-                  >
-                    {/* Primary top row */}
-                    <div className="flex items-start justify-between gap-2">
-                      <div className="space-y-1">
-                        <h3 className="font-bold text-slate-200 group-hover:text-white transition-colors leading-tight">
-                          {config.name}
-                        </h3>
-                        <p className="text-xs text-slate-450 line-clamp-2 pr-2">
-                          {config.description || "Sem descrição cadastrada"}
-                        </p>
-                      </div>
-                      <span className={cn("inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-bold tracking-wide uppercase shrink-0", getStatusBadge(config.status))}>
-                        {getStatusLabel(config.status)}
-                      </span>
-                    </div>
-
-                    {/* Metadata tags */}
-                    <div className="flex flex-wrap gap-1.5 pt-1 text-[10px] font-mono text-slate-400 font-medium">
-                      <span className="rounded bg-slate-900 px-1.5 py-0.5 border border-slate-800/40">
-                        Fontes: {config.sources_json?.join(", ")}
-                      </span>
-                      <span className="rounded bg-slate-900 px-1.5 py-0.5 border border-slate-800/40">
-                        {config.keywords_json?.length || 0} Kw
-                      </span>
-                    </div>
-
-                    {/* Footer Execution Status */}
-                    <div className="flex items-center justify-between border-t border-slate-800/40 pt-3 mt-1">
-                      {lastRun ? (
-                        <div className="flex items-center gap-1.5 text-xs text-slate-400 font-medium">
-                          {getRunStatusIcon(lastRun.status)}
-                          <span className="text-[11px] truncate max-w-[120px]">
-                            {getRunStatusText(lastRun.status)} ({formatDate(lastRun.created_at).split(" ")[0]})
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 italic">Nunca executado</span>
-                      )}
-
-                      {/* Quick Action buttons */}
-                      <div className="flex gap-2 shrink-0">
-                        <button
-                          onClick={(e) => handleOpenEdit(e, config)}
-                          className="flex h-7.5 w-7.5 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/30 text-slate-400 hover:border-slate-600 hover:text-slate-200 hover:bg-slate-900 transition-colors"
-                          title="Editar Nicho"
-                          aria-label="Editar"
-                        >
-                          <Edit className="h-3.5 w-3.5" />
-                        </button>
-                        <button
-                          onClick={(e) => handleTriggerRun(e, config)}
-                          disabled={config.status !== "active" || isTriggering}
-                          className="flex h-7.5 w-7.5 items-center justify-center rounded-lg border border-slate-800 bg-slate-950/40 text-emerald-400 hover:border-emerald-500/30 hover:bg-emerald-600/10 hover:text-emerald-300 transition-colors disabled:opacity-35 disabled:hover:bg-transparent disabled:hover:text-emerald-400 disabled:cursor-not-allowed"
-                          title="Buscar Agora"
-                          aria-label="Disparar varredura"
-                        >
-                          {isTriggering ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Play className="h-3.5 w-3.5 fill-current" />
-                          )}
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Right Column: Dynamic config form or active runs history details */}
-          <div className="lg:col-span-2">
-            {rightView === 'details' && selectedConfig ? (
-              <div className="rounded-xl border border-slate-800 bg-[#0b101c]/30 p-6 backdrop-blur-sm space-y-6">
-                {/* Header detail */}
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between border-b border-slate-800/60 pb-5">
-                  <div>
-                    <h3 className="text-xl font-bold text-white leading-tight">{selectedConfig.name}</h3>
-                    <p className="mt-1 text-sm text-slate-400">{selectedConfig.description || "Sem descrição"}</p>
-                  </div>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={(e) => handleOpenEdit(e, selectedConfig)}
-                      className="flex items-center gap-1.5 rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-900 hover:text-white transition-colors"
-                    >
-                      <Edit className="h-3.5 w-3.5" />
-                      <span>Editar</span>
-                    </button>
-                    <button
-                      onClick={(e) => handleTriggerRun(e, selectedConfig)}
-                      disabled={selectedConfig.status !== "active" || triggeringId === selectedConfig.id}
-                      className="flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-white shadow hover:bg-emerald-500 disabled:opacity-40 transition-colors"
-                    >
-                      {triggeringId === selectedConfig.id ? (
-                        <>
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          <span>Enfileirando...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Play className="h-3.5 w-3.5 fill-current" />
-                          <span>Buscar agora</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+        <div className="grid gap-4 xl:grid-cols-2">
+          {visibleConfigs.map((config) => (
+            <article key={config.id} className="rounded-xl border border-slate-800 bg-[#0b101c]/45 p-5">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <div className="flex items-center gap-2"><h3 className="font-bold text-white">{config.name}</h3><span className="rounded border border-slate-800 px-2 py-0.5 text-[10px] uppercase text-slate-500">{config.status}</span></div>
+                  {config.description && <p className="mt-2 text-sm text-slate-400">{config.description}</p>}
                 </div>
-
-                {/* Configuration Metadata Table Grid */}
-                <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3 bg-slate-950/40 rounded-xl border border-slate-900 p-5 text-xs">
-                  <div className="space-y-1">
-                    <span className="block font-bold text-slate-500 uppercase tracking-wider text-[9px]">Linguagem / Região</span>
-                    <span className="font-semibold text-slate-350 text-xs">
-                      {selectedConfig.language} / {selectedConfig.country_code} {selectedConfig.region_code ? `(${selectedConfig.region_code})` : ""}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="block font-bold text-slate-500 uppercase tracking-wider text-[9px]">Histórico de Busca</span>
-                    <span className="font-semibold text-slate-350 text-xs">{selectedConfig.days_back} dias atrás</span>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="block font-bold text-slate-500 uppercase tracking-wider text-[9px]">Visualizações Mínimas</span>
-                    <span className="font-semibold text-slate-350 text-xs">
-                      {selectedConfig.min_views.toLocaleString("pt-BR")} views
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <span className="block font-bold text-slate-500 uppercase tracking-wider text-[9px]">Resultados Máximos / Query</span>
-                    <span className="font-semibold text-slate-350 text-xs">{selectedConfig.max_results_per_query} resultados</span>
-                  </div>
-                  <div className="space-y-1 sm:col-span-2">
-                    <span className="block font-bold text-slate-500 uppercase tracking-wider text-[9px]">Fontes</span>
-                    <span className="font-semibold text-slate-350 text-xs uppercase font-mono">
-                      {selectedConfig.sources_json?.join(" + ")}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Keywords List */}
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Palavras-chave Pesquisadas</h4>
-                  <div className="flex flex-wrap gap-1.5 bg-slate-950/20 rounded-xl border border-slate-900/60 p-4 max-h-[150px] overflow-y-auto">
-                    {selectedConfig.keywords_json?.map((kw, idx) => (
-                      <span
-                        key={idx}
-                        className="rounded bg-[#0c1223] border border-slate-800/80 px-2.5 py-1 text-xs font-medium text-indigo-400 select-text"
-                      >
-                        {kw}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Negative Keywords List if present */}
-                {selectedConfig.negative_keywords_json?.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-rose-400/90">Termos Excluídos (Filtro Negativo)</h4>
-                    <div className="flex flex-wrap gap-1.5 bg-slate-950/10 rounded-xl border border-rose-950/10 p-4 max-h-[120px] overflow-y-auto">
-                      {selectedConfig.negative_keywords_json.map((nkw, idx) => (
-                        <span
-                          key={idx}
-                          className="rounded bg-slate-950/60 border border-rose-950/20 px-2 py-0.5 text-xs text-rose-450 select-text"
-                        >
-                          {nkw}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {/* Runs execution history */}
-                <div className="space-y-4 border-t border-slate-800/60 pt-6">
-                  <div className="flex items-center justify-between">
-                    <h4 className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-slate-400">
-                      <History className="h-4 w-4 text-slate-500" />
-                      Histórico Recente de Execuções
-                    </h4>
-                    <span className="text-[10px] text-slate-500 font-mono">Máx 50 registros</span>
-                  </div>
-
-                  {loadingRuns ? (
-                    <div className="flex justify-center py-8">
-                      <Loader2 className="h-6 w-6 animate-spin text-slate-500" />
-                    </div>
-                  ) : runs.length === 0 ? (
-                    <div className="rounded-xl border border-slate-900 bg-slate-950/20 py-8 text-center text-xs text-slate-500 font-medium">
-                      Este nicho ainda não possui histórico de execuções. Clique em "Buscar agora" para iniciar.
-                    </div>
-                  ) : (
-                    <div className="overflow-hidden rounded-xl border border-slate-850 bg-slate-950/30">
-                      <div className="max-h-[300px] overflow-y-auto">
-                        <table className="w-full text-left text-xs text-slate-300">
-                          <thead className="sticky top-0 bg-[#0c1223] text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-800">
-                            <tr>
-                              <th className="px-4 py-3">Iniciado Em</th>
-                              <th className="px-4 py-3">Status</th>
-                              <th className="px-4 py-3 text-right">Itens Encontrados</th>
-                              <th className="px-4 py-3 text-right">Salvos / Atualizados</th>
-                              <th className="px-4 py-3">Erro</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-900/50">
-                            {runs.map((run) => (
-                              <tr key={run.id} className="hover:bg-slate-900/40">
-                                <td className="px-4 py-3 font-mono text-[11px] text-slate-400">
-                                  {formatDate(run.created_at)}
-                                </td>
-                                <td className="px-4 py-3">
-                                  <span className="inline-flex items-center gap-1 font-semibold text-slate-350">
-                                    {getRunStatusIcon(run.status)}
-                                    <span className="ml-1 text-[11px]">{getRunStatusText(run.status)}</span>
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3 text-right font-mono font-semibold text-slate-200">
-                                  {run.items_found || 0}
-                                </td>
-                                <td className="px-4 py-3 text-right font-mono font-medium text-slate-400">
-                                  {run.items_inserted || 0} / {run.items_updated || 0}
-                                </td>
-                                <td className="px-4 py-3 text-rose-400 truncate max-w-[150px] font-medium" title={run.error_message || ""}>
-                                  {run.error_message || "-"}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  )}
+                <div className="flex gap-1">
+                  <button onClick={() => openEdit(config)} className="rounded p-2 text-slate-400 hover:bg-slate-800 hover:text-white" title="Editar"><Edit className="h-4 w-4" /></button>
+                  <button onClick={() => void run(config)} disabled={runningId === config.id || config.status !== "active"} className="rounded p-2 text-indigo-400 hover:bg-indigo-500/10 disabled:opacity-30" title="Executar">{runningId === config.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}</button>
                 </div>
               </div>
-            ) : rightView === 'form' ? (
-              /* Create or Edit config Form */
-              <div className="rounded-xl border border-slate-800 bg-[#0b101c]/40 p-6 backdrop-blur-sm space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800/60 pb-5">
-                  <h3 className="text-lg font-bold text-white">
-                    {isEditing ? "Editar Nicho de Pesquisa" : "Cadastrar Novo Nicho"}
-                  </h3>
-                  <button
-                    onClick={() => {
-                      if (selectedConfig) {
-                        setRightView('details');
-                        loadRuns(selectedConfig.id);
-                      } else {
-                        setRightView('details');
-                      }
-                    }}
-                    className="text-xs text-slate-450 hover:text-slate-200 font-semibold"
-                  >
-                    Cancelar
-                  </button>
-                </div>
-
-                <form onSubmit={handleFormSubmit} className="space-y-5">
-                  {/* Name field */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Nome do Nicho</label>
-                    <input
-                      type="text"
-                      value={formName}
-                      onChange={(e) => setFormName(e.target.value)}
-                      placeholder="Ex: Inteligência Artificial, Astronomia Amadora..."
-                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-semibold"
-                      required
-                    />
-                  </div>
-
-                  {/* Description field */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Descrição</label>
-                    <input
-                      type="text"
-                      value={formDescription}
-                      onChange={(e) => setFormDescription(e.target.value)}
-                      placeholder="Breve sumário dos objetivos desse mapeamento..."
-                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-350 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all"
-                    />
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    {/* Status field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Status</label>
-                      <select
-                        value={formStatus}
-                        onChange={(e) => setFormStatus(e.target.value as any)}
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2.5 text-sm text-slate-200 outline-none focus:border-indigo-500"
-                      >
-                        <option value="active">Ativo</option>
-                        <option value="paused">Pausado</option>
-                        <option value="archived">Arquivado</option>
-                      </select>
-                    </div>
-
-                    {/* Language field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Idioma</label>
-                      <input
-                        type="text"
-                        value={formLanguage}
-                        onChange={(e) => setFormLanguage(e.target.value)}
-                        placeholder="pt"
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 text-center font-semibold"
-                      />
-                    </div>
-
-                    {/* Country code field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Cód País</label>
-                      <input
-                        type="text"
-                        value={formCountryCode}
-                        onChange={(e) => setFormCountryCode(e.target.value)}
-                        placeholder="BR"
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 text-center font-semibold"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid gap-4 sm:grid-cols-3">
-                    {/* Days back field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Varredura (Dias)</label>
-                      <input
-                        type="number"
-                        min="1"
-                        max="90"
-                        value={formDaysBack}
-                        onChange={(e) => setFormDaysBack(parseInt(e.target.value) || 5)}
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 text-center"
-                      />
-                    </div>
-
-                    {/* Min views field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Views Mínimas</label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={formMinViews}
-                        onChange={(e) => setFormMinViews(parseInt(e.target.value) || 0)}
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 text-center"
-                      />
-                    </div>
-
-                    {/* Max results field */}
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">Max Results / Query</label>
-                      <input
-                        type="number"
-                        min="5"
-                        max="200"
-                        value={formMaxResults}
-                        onChange={(e) => setFormMaxResults(parseInt(e.target.value) || 50)}
-                        className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-slate-200 outline-none focus:border-indigo-500 text-center"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Sources field checkboxes */}
-                  <div className="space-y-2">
-                    <label className="text-xs font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                      Fontes de Busca
-                    </label>
-                    <div className="flex gap-4">
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-350 select-none">
-                        <input
-                          type="checkbox"
-                          checked={formSources.includes("youtube")}
-                          onChange={() => handleSourceToggle("youtube")}
-                          className="h-4 w-4 rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500/20"
-                        />
-                        <span>YouTube (Vídeos / Shorts)</span>
-                      </label>
-                      <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-350 select-none">
-                        <input
-                          type="checkbox"
-                          checked={formSources.includes("google_news")}
-                          onChange={() => handleSourceToggle("google_news")}
-                          className="h-4 w-4 rounded border-slate-800 bg-slate-950 text-indigo-600 focus:ring-indigo-500/20"
-                        />
-                        <span>Google News (Artigos / Notícias)</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Keywords text area */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Palavras-chave (Mapeamento Positivo)
-                      </label>
-                      <span className="text-[10px] text-slate-500">Uma por linha. Obrigatório.</span>
-                    </div>
-                    <textarea
-                      rows={5}
-                      value={formKeywordsText}
-                      onChange={(e) => setFormKeywordsText(e.target.value)}
-                      placeholder="inteligencia artificial&#10;ia no marketing&#10;openai artificial intelligence"
-                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-250 placeholder-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-mono resize-none"
-                      required
-                    />
-                  </div>
-
-                  {/* Negative keywords text area */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <label className="text-xs font-bold uppercase tracking-wider text-rose-450/90">
-                        Termos Excluídos (Filtro Negativo)
-                      </label>
-                      <span className="text-[10px] text-slate-500">Uma por linha. Opcional.</span>
-                    </div>
-                    <textarea
-                      rows={3}
-                      value={formNegKeywordsText}
-                      onChange={(e) => setFormNegKeywordsText(e.target.value)}
-                      placeholder="curso gratis&#10;vagas de emprego&#10;empresa contrata"
-                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-250 placeholder-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-mono resize-none"
-                    />
-                  </div>
-
-                  {/* Youtube categories text area */}
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-baseline">
-                      <label className="text-xs font-bold uppercase tracking-wider text-slate-400">
-                        Categorias do YouTube (IDs de Busca)
-                      </label>
-                      <span className="text-[10px] text-slate-500">Uma por linha. Opcional (Ex: 28 = Tech, 27 = Educação).</span>
-                    </div>
-                    <textarea
-                      rows={2}
-                      value={formCategoriesText}
-                      onChange={(e) => setFormCategoriesText(e.target.value)}
-                      placeholder="28&#10;27"
-                      className="w-full rounded-lg border border-slate-800 bg-slate-950 px-3.5 py-2.5 text-sm text-slate-250 placeholder-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/10 transition-all font-mono resize-none"
-                    />
-                  </div>
-
-                  {/* Submit button */}
-                  <button
-                    type="submit"
-                    disabled={formSubmitting}
-                    className="flex w-full items-center justify-center gap-2 rounded-lg bg-indigo-600 px-4 py-3 text-sm font-semibold text-white shadow-md shadow-indigo-600/15 hover:bg-indigo-500 active:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
-                  >
-                    {formSubmitting ? (
-                      <>
-                        <Loader2 className="h-4.5 w-4.5 animate-spin" />
-                        <span>Salvando Configurações...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Save className="h-4.5 w-4.5" />
-                        <span>Salvar Nicho</span>
-                      </>
-                    )}
-                  </button>
-                </form>
+              <div className="mt-4 flex flex-wrap gap-2 text-xs">
+                <span className="rounded bg-slate-900 px-2 py-1 text-slate-400">{config.days_back} dias</span>
+                <span className="rounded bg-slate-900 px-2 py-1 text-slate-400">≥ {Number(config.min_views || 0).toLocaleString("pt-BR")} views</span>
+                {(config.minimum_performance_ratio || 0) > 0 && <span className="rounded bg-emerald-500/10 px-2 py-1 text-emerald-400">≥ {config.minimum_performance_ratio}× canal</span>}
+                {(config.included_topic_ids || []).length > 0 && <span className="rounded bg-indigo-500/10 px-2 py-1 text-indigo-400">{config.included_topic_ids.length} temas estruturados</span>}
               </div>
-            ) : (
-              <div className="h-[40vh] rounded-xl border border-dashed border-slate-850 flex flex-col items-center justify-center text-center text-slate-500 p-8">
-                <FolderOpen className="h-8 w-8 text-slate-700 mb-2.5" />
-                <span className="font-semibold text-sm">Selecione um Nicho de Pesquisa</span>
-                <p className="text-xs text-slate-550 mt-1.5 max-w-[300px]">
-                  Escolha um nicho na lista lateral para visualizar suas configurações estruturadas e histórico de raspagem.
-                </p>
-              </div>
-            )}
-          </div>
+              {(config.keywords_json || []).length > 0 && <div className="mt-4 text-xs text-slate-500"><span className="font-semibold text-slate-400">Queries:</span> {config.keywords_json.join(" · ")}</div>}
+            </article>
+          ))}
         </div>
       )}
+
+      {editorOpen && (
+        <div className="fixed inset-0 z-50 overflow-y-auto bg-black/70 p-4">
+          <form onSubmit={save} className="mx-auto my-8 w-full max-w-3xl space-y-5 rounded-2xl border border-slate-800 bg-[#090d16] p-6 shadow-2xl">
+            <div className="flex items-center justify-between"><div><h3 className="text-xl font-bold text-white">{editing ? "Editar pesquisa" : "Nova pesquisa"}</h3><p className="mt-1 text-xs text-slate-500">Use keywords para coleta e temas estruturados para decidir o que realmente pertence à pesquisa.</p></div><button type="button" onClick={resetEditor} className="text-slate-500 hover:text-white"><X className="h-5 w-5" /></button></div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Nome"><input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" placeholder="Minecraft breakout" /></Field>
+              <Field label="Descrição"><input value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" placeholder="Vídeos fora da curva..." /></Field>
+            </div>
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <Field label="Últimos dias"><input type="number" min="1" value={form.days_back} onChange={(e) => setForm({ ...form, days_back: Number(e.target.value) })} className="input" /></Field>
+              <Field label="Views mínimas"><input type="number" min="0" value={form.min_views} onChange={(e) => setForm({ ...form, min_views: Number(e.target.value) })} className="input" /></Field>
+              <Field label="Breakout mínimo"><input type="number" min="0" step="0.1" value={form.minimum_performance_ratio || ""} onChange={(e) => setForm({ ...form, minimum_performance_ratio: Number(e.target.value) })} className="input" placeholder="2.0" /></Field>
+            </div>
+
+            <Field label="Temas / subtemas / formatos / séries incluídos">
+              <DiscoveryAutocomplete selected={includedTerms} onChange={setIncludedTerms} entityOnly placeholder="Ex: Minecraft, Analog Horror, Roleplay..." />
+            </Field>
+            <Field label="Excluir temas">
+              <DiscoveryAutocomplete selected={excludedTerms} onChange={setExcludedTerms} entityOnly placeholder="Temas que não devem entrar..." />
+            </Field>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label={`Confiança temática mínima (${Math.round(form.minimum_topic_confidence * 100)}%)`}><input type="range" min="0" max="1" step="0.05" value={form.minimum_topic_confidence} onChange={(e) => setForm({ ...form, minimum_topic_confidence: Number(e.target.value) })} className="w-full" /></Field>
+              <Field label="Máximo por query"><input type="number" min="1" max="200" value={form.max_results_per_query} onChange={(e) => setForm({ ...form, max_results_per_query: Number(e.target.value) })} className="input" /></Field>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2">
+              <Field label="Keywords de coleta (uma por linha)"><textarea rows={5} value={form.keywords} onChange={(e) => setForm({ ...form, keywords: e.target.value })} className="input resize-none" placeholder={"minecraft horror\nminecraft smp\nanalog horror"} /></Field>
+              <Field label="Keywords negativas"><textarea rows={5} value={form.negative_keywords} onChange={(e) => setForm({ ...form, negative_keywords: e.target.value })} className="input resize-none" placeholder={"tutorial básico\ncompilação"} /></Field>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t border-slate-800 pt-5"><button type="button" onClick={resetEditor} className="rounded-lg border border-slate-800 px-4 py-2.5 text-sm text-slate-400">Cancelar</button><button disabled={saving} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-50">{saving && <Loader2 className="h-4 w-4 animate-spin" />}{editing ? "Salvar alterações" : "Criar pesquisa"}</button></div>
+          </form>
+        </div>
+      )}
+
+      <style jsx>{` .input { width: 100%; border-radius: .5rem; border: 1px solid rgb(30 41 59); background: rgb(2 6 23); padding: .625rem .75rem; font-size: .875rem; color: rgb(226 232 240); outline: none; } .input:focus { border-color: rgb(99 102 241); } `}</style>
     </div>
   );
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return <label className="block space-y-2"><span className="text-xs font-bold uppercase tracking-wider text-slate-500">{label}</span>{children}</label>;
 }
