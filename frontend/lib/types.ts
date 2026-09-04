@@ -1,5 +1,13 @@
 export type ContentStatus = "new" | "reviewed" | "selected" | "rejected" | "produced" | "archived";
 
+export interface DetectedTopic {
+  id: number;
+  name: string;
+  type: string;
+  confidence: number;
+  source: string;
+}
+
 export interface ContentItem {
   id: number;
   source: string;
@@ -37,6 +45,7 @@ export interface ContentItem {
   production_notes: string | null;
   collected_at: string;
   last_seen_at: string;
+  detected_topics: DetectedTopic[];
 }
 
 export interface ContentItemListResponse {
@@ -74,7 +83,7 @@ export interface ReferenceSource {
   language: string | null;
   status: ReferenceSourceStatus;
   notes: string | null;
-  raw_json: Record<string, unknown> | null;
+  raw_json: Record<string, any> | null;
   created_at: string;
   updated_at: string;
 }
@@ -96,7 +105,7 @@ export interface ReferenceImportJob {
   selected_language: string | null;
   selected_caption_type: string | null;
   error_message: string | null;
-  raw_result_json: Record<string, unknown> | null;
+  raw_result_json: Record<string, any> | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -112,7 +121,7 @@ export interface Transcript {
   full_text_hash: string;
   srt_text: string | null;
   vtt_text: string | null;
-  raw_json: Record<string, unknown> | null;
+  raw_json: Record<string, any> | null;
   created_at: string;
   version_number: number;
   is_active: boolean;
