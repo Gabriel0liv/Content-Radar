@@ -51,3 +51,27 @@ def test_single_incidental_minecraft_mention_is_not_high_confidence():
     minecraft = next((result for result in results if result.topic == "Minecraft"), None)
 
     assert minecraft is None or minecraft.confidence < 0.7
+
+
+def test_transcript_can_identify_minecraft_when_title_is_intentionally_vague():
+    item = make_item(title="Something is watching us")
+    transcript = (
+        "we returned to the smp after entering the nether, then a creeper destroyed "
+        "the redstone door while we prepared to fight the ender dragon"
+    )
+
+    results = TopicClassifier().classify_content_item(item, transcript_text=transcript)
+    minecraft = next(result for result in results if result.topic == "Minecraft")
+
+    assert minecraft.confidence >= 0.7
+    assert {signal.source for signal in minecraft.signals} == {"transcript", "youtube_category"}
+
+
+def test_transcript_single_incidental_mention_does_not_force_minecraft():
+    item = make_item(title="A history of sandbox games")
+    transcript = "Minecraft is one example, but today we are discussing the history of Roblox and Garry's Mod."
+
+    results = TopicClassifier().classify_content_item(item, transcript_text=transcript)
+    minecraft = next((result for result in results if result.topic == "Minecraft"), None)
+
+    assert minecraft is None or minecraft.confidence < 0.7
