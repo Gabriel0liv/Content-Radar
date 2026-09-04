@@ -18,6 +18,13 @@ class ContentItemsRepository:
             ContentItem.external_id == external_id
         ).first()
 
+    def get_by_youtube_video_id(self, youtube_video_id: str) -> Optional[ContentItem]:
+        if not youtube_video_id:
+            return None
+        return self.db.query(ContentItem).filter(
+            ContentItem.youtube_video_id == youtube_video_id
+        ).order_by(ContentItem.id.asc()).first()
+
     def list(self, limit: int = 500, offset: int = 0, search: Optional[str] = None, source: Optional[str] = None, content_type: Optional[str] = None, status: Optional[str] = None, topic_seed: Optional[str] = None, min_score: Optional[float] = None, min_views: Optional[int] = None, sort_by: Optional[str] = "score", sort_order: Optional[str] = "desc") -> Tuple[List[ContentItem], int]:
         query = self.db.query(ContentItem)
         if source and source != "Todos":
