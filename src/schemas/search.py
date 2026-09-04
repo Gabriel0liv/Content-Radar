@@ -16,6 +16,10 @@ class SearchConfigBase(BaseModel):
     keywords_json: List[str]
     negative_keywords_json: List[str] = Field(default_factory=list)
     youtube_categories_json: List[str] = Field(default_factory=list)
+    included_topic_ids: List[int] = Field(default_factory=list)
+    excluded_topic_ids: List[int] = Field(default_factory=list)
+    minimum_topic_confidence: Optional[float] = Field(default=0.7, ge=0, le=1)
+    minimum_performance_ratio: Optional[float] = Field(default=None, ge=0)
 
 class SearchConfigCreate(SearchConfigBase):
     pass
@@ -34,6 +38,10 @@ class SearchConfigUpdate(BaseModel):
     keywords_json: Optional[List[str]] = None
     negative_keywords_json: Optional[List[str]] = None
     youtube_categories_json: Optional[List[str]] = None
+    included_topic_ids: Optional[List[int]] = None
+    excluded_topic_ids: Optional[List[int]] = None
+    minimum_topic_confidence: Optional[float] = Field(default=None, ge=0, le=1)
+    minimum_performance_ratio: Optional[float] = Field(default=None, ge=0)
 
 class SearchConfigRead(SearchConfigBase):
     id: int
