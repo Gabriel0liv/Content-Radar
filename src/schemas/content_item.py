@@ -2,6 +2,15 @@ from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Dict, Any, Literal, List
 
+
+class DetectedTopic(BaseModel):
+    id: int
+    name: str
+    type: str
+    confidence: float
+    source: str
+
+
 class ContentItemBase(BaseModel):
     source: str
     external_id: str
@@ -83,6 +92,7 @@ class ContentItemRead(ContentItemBase):
     production_notes: Optional[str] = None
     collected_at: datetime
     last_seen_at: datetime
+    detected_topics: List[DetectedTopic] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
