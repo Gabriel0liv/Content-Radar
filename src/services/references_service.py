@@ -16,6 +16,7 @@ from src.schemas.references import (
 )
 from src.repositories.references_repository import ReferencesRepository
 from src.services.youtube_reference_importer import YouTubeReferenceImporter
+from src.services.transcript_topic_enrichment import enrich_topics_from_transcript
 
 
 class ReferencesService:
@@ -26,12 +27,7 @@ class ReferencesService:
     def import_youtube_url(self, request: YouTubeUrlImportRequest, background_tasks: BackgroundTasks) -> ReferenceImportJob:
         video_id = extract_youtube_video_id(request.url)
         existing_source = self.repo.get_reference_source_by_youtube_video_id(video_id)
-
-        job = self.repo.create_import_job(
-            source_url=request.url,
-            preferred_languages=request.preferred_languages,
-            method="yt_dlp_captions",
-        )
+        job = self.repo.create_import_job(source_url=request.url, preferred_languages=request.preferred_languages, method="yt_dlp_captions")
 
         if existing_source:
             job.reference_source_id = existing_source.id
@@ -91,7 +87,20 @@ class ReferencesService:
         version_number = self.repo.get_next_transcript_version_number(source_id)
         try:
             self.repo.deactivate_transcripts_for_source(source_id)
-            db_transcript = self.repo.create_transcript_version(reference_source_id=source_id, import_job_id=job_id, language=payload.language, source_method=payload.source_method, full_text=payload.full_text, full_text_hash=full_text_hash, version_number=version_number, is_active=True, duplicate_of_transcript_id=duplicate_of_id, srt_text=payload.srt_text, vtt_text=payload.vtt_text, raw_json=payload.raw_json)
+            db_transcript = self.repo.create_transcript_version(
+                reference_source_id=source_id,
+                import_job_id=job_id,
+                language=payload.language,
+                source_method=payload.source_method,
+                full_text=payload.full_text,
+                full_text_hash=full_text_hash,
+                version_number=version_number,
+                is_active=True,
+                duplicate_of_transcript_id=duplicate_of_id,
+                srt_text=payload.srt_text,
+                vtt_text=payload.vtt_text,
+                raw_json=payload.raw_json,
+            )
             if payload.segments:
                 self.repo.create_transcript_segments(db_transcript.id, payload.segments)
             source = self.repo.get_reference_source_by_id(source_id)
@@ -100,6 +109,11 @@ class ReferencesService:
                 source.updated_at = datetime.now(timezone.utc)
                 self.db.add(source)
                 self.db.commit()
+                if source.youtube_video_id:
+                    try:
+                        enrich_topics_from_transcript(self.db, source.youtube_video_id, db_transcript.full_text)
+                    except Exception:
+                        pass
             return db_transcript
         except IntegrityError:
             self.db.rollback()
@@ -112,20 +126,72 @@ def _save_transcript(repo, source, job, language, source_method, full_text, segm
     existing = repo.get_transcript_by_source_and_hash(source.id, full_text_hash)
     version_number = repo.get_next_transcript_version_number(source.id)
     repo.deactivate_transcripts_for_source(source.id)
-    transcript = repo.create_transcript_version(reference_source_id=source.id, import_job_id=job.id, language=language, source_method=source_method, full_text=full_text, full_text_hash=full_text_hash, version_number=version_number, is_active=True, duplicate_of_transcript_id=existing.id if existing else None, vtt_text=vtt_text, raw_json=raw_json)
-    repo.create_transcript_segments(transcript.id, [TranscriptSegmentCreate(segment_index=seg["segment_index"], start_time=seg.get("start_time"), end_time=seg.get("end_time"), text=seg["text"]) for seg in segments])
+    transcript = repo.create_transcript_version(
+        reference_source_id=source.id,
+        import_job_id=job.id,
+        language=language,
+        source_method=source_method,
+        full_text=full_text,
+        full_text_hash=full_text_hash,
+        version_number=version_number,
+        is_active=True,
+        duplicate_of_transcript_id=existing.id if existing else None,
+        vtt_text=vtt_text,
+        raw_json=raw_json,
+    )
+    repo.create_transcript_segments(
+        transcript.id,
+        [
+            TranscriptSegmentCreate(
+                segment_index=seg["segment_index"],
+                start_time=seg.get("start_time"),
+                end_time=seg.get("end_time"),
+                text=seg["text"],
+            )
+            for seg in segments
+        ],
+    )
+    if source.youtube_video_id:
+        try:
+            enrich_topics_from_transcript(repo.db, source.youtube_video_id, transcript.full_text)
+        except Exception:
+            pass
     return transcript, version_number, full_text_hash, existing
 
 
 def _transcribe_from_audio(repo, importer, source, job):
     audio = importer.transcribe_audio_from_youtube(job.source_url)
-    transcript, version_number, full_text_hash, existing = _save_transcript(repo=repo, source=source, job=job, language=audio.get("language"), source_method="audio_to_text_future", full_text=audio["full_text"], segments=audio["segments"], raw_json={"engine": "faster-whisper", "model": audio.get("model"), "language_probability": audio.get("language_probability"), "char_count": len(audio["full_text"]), "segment_count": len(audio["segments"]), "literal_text": True})
+    transcript, version_number, full_text_hash, existing = _save_transcript(
+        repo=repo,
+        source=source,
+        job=job,
+        language=audio.get("language"),
+        source_method="audio_to_text_future",
+        full_text=audio["full_text"],
+        segments=audio["segments"],
+        raw_json={
+            "engine": "faster-whisper",
+            "model": audio.get("model"),
+            "language_probability": audio.get("language_probability"),
+            "char_count": len(audio["full_text"]),
+            "segment_count": len(audio["segments"]),
+            "literal_text": True,
+        },
+    )
     job.method = "audio_to_text_future"
     job.selected_language = audio.get("language")
     job.selected_caption_type = "audio_to_text"
     job.status = "completed"
     job.error_message = None
-    job.raw_result_json = {"transcription_mode_used": "audio", "transcript_id": transcript.id, "version_number": version_number, "full_text_hash": full_text_hash, "duplicate_of_transcript_id": existing.id if existing else None, "engine": "faster-whisper", "model": audio.get("model")}
+    job.raw_result_json = {
+        "transcription_mode_used": "audio",
+        "transcript_id": transcript.id,
+        "version_number": version_number,
+        "full_text_hash": full_text_hash,
+        "duplicate_of_transcript_id": existing.id if existing else None,
+        "engine": "faster-whisper",
+        "model": audio.get("model"),
+    }
     source.status = "transcribed"
     return transcript
 
@@ -170,7 +236,21 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
             except ValueError:
                 pass
 
-        values = dict(source_url=job.source_url, youtube_video_id=canonical_video_id, title=info.get("title", "Untitled YouTube Video"), channel_title=info.get("channel", info.get("uploader")), channel_id=info.get("channel_id", info.get("uploader_id")), description=info.get("description"), published_at=published_at, duration_seconds=info.get("duration"), view_count=info.get("view_count"), like_count=info.get("like_count"), thumbnail_url=info.get("thumbnail"), language=info.get("language"), raw_json=raw_json)
+        values = dict(
+            source_url=job.source_url,
+            youtube_video_id=canonical_video_id,
+            title=info.get("title", "Untitled YouTube Video"),
+            channel_title=info.get("channel", info.get("uploader")),
+            channel_id=info.get("channel_id", info.get("uploader_id")),
+            description=info.get("description"),
+            published_at=published_at,
+            duration_seconds=info.get("duration"),
+            view_count=info.get("view_count"),
+            like_count=info.get("like_count"),
+            thumbnail_url=info.get("thumbnail"),
+            language=info.get("language"),
+            raw_json=raw_json,
+        )
 
         source = preexisting_source or repo.get_reference_source_by_youtube_video_id(canonical_video_id) or repo.get_reference_source_by_external_id("youtube_video", external_id)
         if source:
@@ -183,7 +263,13 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
             db.commit()
             db.refresh(source)
         else:
-            source_in = ReferenceSourceCreate(source_type="youtube_video", external_id=external_id, youtube_video_id=canonical_video_id, status="importing", **{k: v for k, v in values.items() if k != "youtube_video_id"})
+            source_in = ReferenceSourceCreate(
+                source_type="youtube_video",
+                external_id=external_id,
+                youtube_video_id=canonical_video_id,
+                status="importing",
+                **{k: v for k, v in values.items() if k != "youtube_video_id"},
+            )
             try:
                 source = ReferenceSource(**source_in.model_dump())
                 db.add(source)
@@ -222,11 +308,33 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
                 if not segments:
                     raise ValueError("Nenhum segmento textual extraído do VTT.")
                 full_text = importer.build_clean_full_text(segments)
-                transcript, version_number, full_text_hash, existing = _save_transcript(repo=repo, source=source, job=job, language=selected_lang, source_method="manual_caption" if caption_type == "manual_caption" else "auto_caption", full_text=full_text, segments=segments, raw_json={"char_count": len(full_text), "segment_count": len(segments), "deduplication": "time-overlap-only"}, vtt_text=vtt_text)
+                transcript, version_number, full_text_hash, existing = _save_transcript(
+                    repo=repo,
+                    source=source,
+                    job=job,
+                    language=selected_lang,
+                    source_method="manual_caption" if caption_type == "manual_caption" else "auto_caption",
+                    full_text=full_text,
+                    segments=segments,
+                    raw_json={
+                        "char_count": len(full_text),
+                        "segment_count": len(segments),
+                        "deduplication": "time-overlap-only",
+                    },
+                    vtt_text=vtt_text,
+                )
                 job.selected_language = selected_lang
                 job.selected_caption_type = caption_type
                 job.status = "completed"
-                job.raw_result_json = {"transcription_mode_used": "youtube_caption", "selected_language": selected_lang, "selected_caption_type": caption_type, "transcript_id": transcript.id, "version_number": version_number, "full_text_hash": full_text_hash, "duplicate_of_transcript_id": existing.id if existing else None}
+                job.raw_result_json = {
+                    "transcription_mode_used": "youtube_caption",
+                    "selected_language": selected_lang,
+                    "selected_caption_type": caption_type,
+                    "transcript_id": transcript.id,
+                    "version_number": version_number,
+                    "full_text_hash": full_text_hash,
+                    "duplicate_of_transcript_id": existing.id if existing else None,
+                }
                 source.status = "transcribed"
             except Exception as caption_exc:
                 try:
@@ -242,7 +350,11 @@ def execute_import_job_task(job_id: int, preferred_languages: List[str], allow_a
             except Exception as audio_exc:
                 job.status = "needs_audio_transcription"
                 job.error_message = f"Sem legendas e falha na transcrição de áudio: {audio_exc}"
-                job.raw_result_json = {"subtitles_languages": raw_json.get("subtitles_languages", []), "automatic_captions_languages": raw_json.get("automatic_captions_languages", []), "audio_error": str(audio_exc)}
+                job.raw_result_json = {
+                    "subtitles_languages": raw_json.get("subtitles_languages", []),
+                    "automatic_captions_languages": raw_json.get("automatic_captions_languages", []),
+                    "audio_error": str(audio_exc),
+                }
                 source.status = "needs_audio_transcription"
 
         job.finished_at = datetime.now(timezone.utc)
