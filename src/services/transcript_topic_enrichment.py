@@ -1,10 +1,8 @@
-from typing import Optional
-
 from sqlalchemy.orm import Session
 
 from src.repositories.content_items_repository import ContentItemsRepository
 from src.repositories.topics_repository import TopicsRepository
-from src.services.topic_classifier import TopicClassifier
+from src.services.topic_classifier import CLASSIFIER_VERSION, TopicClassifier
 
 
 def should_replace_association(existing, inferred_confidence: float) -> bool:
@@ -30,7 +28,8 @@ def enrich_topics_from_transcript(
     if item is None:
         return 0
 
-    classifications = TopicClassifier().classify_content_item(
+    classifier = TopicClassifier()
+    classifications = classifier.classify_content_item(
         item,
         channel_profile=channel_profile,
         transcript_text=transcript_text,
@@ -63,6 +62,6 @@ def enrich_topics_from_transcript(
         )
         persisted += 1
 
-    item.topic_classification_version = TopicClassifier().rules.get("_version", None) or "rules-v1"
+    item.topic_classification_version = CLASSIFIER_VERSION
     content_repo.save(item)
     return persisted
