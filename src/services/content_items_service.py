@@ -4,12 +4,16 @@ from datetime import datetime, timezone
 from src.repositories.content_items_repository import ContentItemsRepository
 from src.schemas.content_item import ContentItemCreate, ContentItemCurationUpdate
 from src.services.channel_profile_service import ChannelProfileService
+from src.services.series_detection_service import SeriesDetectionService
+from src.services.topic_classification_service import TopicClassificationService
 
 class ContentItemsService:
     def __init__(self, db: Session):
         self.db = db
         self.repo = ContentItemsRepository(db)
         self.channel_profiles = ChannelProfileService(db)
+        self.topic_classification = TopicClassificationService(db)
+        self.series_detection = SeriesDetectionService(db)
 
     def get_item(self, item_id: int):
         return self.repo.get_by_id(item_id)
@@ -82,6 +86,7 @@ class ContentItemsService:
         touched_channels = set()
         for payload in items:
             item = self.repo.upsert(payload)
+            self.topic_classification.classify_and_persist(item)
             if item.channel_id:
                 metrics = self.channel_profiles.metrics_for_item(item)
                 item.performance_ratio = metrics["performance_ratio"]
@@ -89,8 +94,10 @@ class ContentItemsService:
                 item = self.repo.save(item)
                 touched_channels.add(item.channel_id)
             ingested.append(item)
+
         for channel_id in touched_channels:
             self.channel_profiles.recompute(channel_id)
+            self.series_detection.detect_and_persist(channel_id)
         return ingested
 
     def get_summary_stats(self):
