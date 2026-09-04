@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 from statistics import median
+from types import SimpleNamespace
 from typing import Iterable
 
 from sqlalchemy.orm import Session
@@ -64,3 +65,22 @@ class ChannelProfileService:
         profile.dominant_topics_json = self.repo.dominant_topics(channel_id)
         profile.last_profiled_at = datetime.now(timezone.utc)
         return self.repo.save(profile)
+
+    def metrics_for_item(self, item) -> dict:
+        if not getattr(item, "channel_id", None):
+            return {
+                "performance_ratio": None,
+                "performance_baseline_samples": 0,
+                "performance_baseline_confidence": "insufficient",
+            }
+        samples = self.repo.list_recent_content(
+            item.channel_id,
+            limit=30,
+            exclude_content_item_id=item.id,
+        )
+        baseline = calculate_channel_baseline(samples)
+        temporary_profile = SimpleNamespace(
+            recent_views_per_day_median=baseline["recent_views_per_day_median"],
+            sample_count=baseline["sample_count"],
+        )
+        return calculate_performance_ratio(item.views_per_day, temporary_profile)
