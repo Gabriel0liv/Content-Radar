@@ -10,10 +10,7 @@ export function useContentItems() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
 
-  // Helper to get parameters from URL
-  const getParam = (key: string, defaultValue: string) => {
-    return searchParams.get(key) || defaultValue;
-  };
+  const getParam = (key: string, defaultValue: string) => searchParams.get(key) || defaultValue;
 
   const [filters, setFilters] = useState({
     search: getParam("search", ""),
@@ -23,6 +20,7 @@ export function useContentItems() {
     topic_seed: getParam("topic_seed", "Todos"),
     min_score: getParam("min_score", "") ? parseFloat(getParam("min_score", "")) : 0,
     min_views: getParam("min_views", "") ? parseInt(getParam("min_views", "")) : 0,
+    min_performance_ratio: getParam("min_performance_ratio", "") ? parseFloat(getParam("min_performance_ratio", "")) : 0,
     sort_by: getParam("sort_by", "score"),
     sort_order: getParam("sort_order", "desc"),
     limit: getParam("limit", "") ? parseInt(getParam("limit", "")) : 50,
@@ -32,21 +30,13 @@ export function useContentItems() {
   const [data, setData] = useState<ContentItemListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-
-  // Debounced search state
   const [debouncedSearch, setDebouncedSearch] = useState(filters.search);
 
   useEffect(() => {
-    const handler = setTimeout(() => {
-      setDebouncedSearch(filters.search);
-    }, 400);
-
-    return () => {
-      clearTimeout(handler);
-    };
+    const handler = setTimeout(() => setDebouncedSearch(filters.search), 400);
+    return () => clearTimeout(handler);
   }, [filters.search]);
 
-  // Update URL search parameters
   const updateURL = useCallback((newFilters: typeof filters) => {
     const params = new URLSearchParams();
     Object.entries(newFilters).forEach(([key, val]) => {
@@ -58,13 +48,11 @@ export function useContentItems() {
     router.replace(`${pathname}${query}`, { scroll: false });
   }, [pathname, router]);
 
-  // Fetch data
   const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       setError(null);
-      
-      const apiParams = {
+      const result = await getContentItems({
         limit: filters.limit,
         offset: filters.offset,
         search: debouncedSearch,
@@ -74,44 +62,24 @@ export function useContentItems() {
         topic_seed: filters.topic_seed,
         min_score: filters.min_score > 0 ? filters.min_score : undefined,
         min_views: filters.min_views > 0 ? filters.min_views : undefined,
+        min_performance_ratio: filters.min_performance_ratio > 0 ? filters.min_performance_ratio : undefined,
         sort_by: filters.sort_by,
         sort_order: filters.sort_order,
-      };
-
-      const result = await getContentItems(apiParams);
+      });
       setData(result);
     } catch (err: any) {
       setError(err.message || "Erro ao carregar conteúdos");
     } finally {
       setLoading(false);
     }
-  }, [
-    filters.limit,
-    filters.offset,
-    debouncedSearch,
-    filters.source,
-    filters.content_type,
-    filters.status,
-    filters.topic_seed,
-    filters.min_score,
-    filters.min_views,
-    filters.sort_by,
-    filters.sort_order
-  ]);
+  }, [filters.limit, filters.offset, debouncedSearch, filters.source, filters.content_type, filters.status, filters.topic_seed, filters.min_score, filters.min_views, filters.min_performance_ratio, filters.sort_by, filters.sort_order]);
 
-  // Fetch when filters or debounced search changes
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  useEffect(() => { void fetchData(); }, [fetchData]);
 
-  // Sync state changes to URL
   const handleFilterChange = useCallback((key: keyof typeof filters, value: any) => {
-    setFilters((prev: typeof filters) => {
+    setFilters((prev) => {
       const next = { ...prev, [key]: value };
-      // Reset offset to 0 when filter condition changes (except when offset itself is changed)
-      if (key !== "offset") {
-        next.offset = 0;
-      }
+      if (key !== "offset") next.offset = 0;
       updateURL(next);
       return next;
     });
@@ -126,6 +94,7 @@ export function useContentItems() {
       topic_seed: "Todos",
       min_score: 0,
       min_views: 0,
+      min_performance_ratio: 0,
       sort_by: "score",
       sort_order: "desc",
       limit: 50,
@@ -143,6 +112,6 @@ export function useContentItems() {
     filters,
     setFilter: handleFilterChange,
     resetFilters,
-    refresh: fetchData
+    refresh: fetchData,
   };
 }
