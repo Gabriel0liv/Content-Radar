@@ -1,3 +1,4 @@
+from src.models.search import SearchConfig, SearchRun  # noqa: F401 - register SQLAlchemy relationships for isolated mapper tests
 from src.models.topic import ContentItemTopic, Topic
 from src.schemas.content_item import DetectedTopic
 
