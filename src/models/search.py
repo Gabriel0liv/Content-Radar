@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Text, Integer, DateTime, ForeignKey, Index, CheckConstraint
+from sqlalchemy import Column, BigInteger, Text, Integer, Float, DateTime, ForeignKey, Index, CheckConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -21,15 +21,20 @@ class SearchConfig(Base):
     keywords_json = Column(JSONB, nullable=False)
     negative_keywords_json = Column(JSONB, nullable=True, server_default='[]')
     youtube_categories_json = Column(JSONB, nullable=True, server_default='[]')
+    included_topic_ids = Column(JSONB, nullable=True, server_default='[]')
+    excluded_topic_ids = Column(JSONB, nullable=True, server_default='[]')
+    minimum_topic_confidence = Column(Float, nullable=True, server_default="0.7")
+    minimum_performance_ratio = Column(Float, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
-    # Relationships
     runs = relationship("SearchRun", back_populates="search_config", cascade="all, delete-orphan")
     content_items = relationship("ContentItem", back_populates="search_config")
 
     __table_args__ = (
         CheckConstraint("status IN ('active', 'paused', 'archived')", name="check_search_configs_status"),
+        CheckConstraint("minimum_topic_confidence IS NULL OR (minimum_topic_confidence >= 0 AND minimum_topic_confidence <= 1)", name="check_search_configs_topic_confidence"),
+        CheckConstraint("minimum_performance_ratio IS NULL OR minimum_performance_ratio >= 0", name="check_search_configs_performance_ratio"),
         Index("idx_search_configs_status", status),
         Index("idx_search_configs_name", name),
     )
@@ -50,7 +55,6 @@ class SearchRun(Base):
     raw_summary_json = Column(JSONB, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
-    # Relationships
     search_config = relationship("SearchConfig", back_populates="runs")
     content_items = relationship("ContentItem", back_populates="search_run")
 
