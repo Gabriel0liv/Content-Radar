@@ -44,6 +44,7 @@ class ContentItemTopic(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     topic = relationship("Topic", back_populates="content_associations")
+    content_item = relationship("ContentItem", back_populates="topic_associations")
 
     __table_args__ = (
         UniqueConstraint("content_item_id", "topic_id", name="uq_content_item_topics_item_topic"),
