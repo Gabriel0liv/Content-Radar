@@ -5,7 +5,14 @@ from urllib.parse import unquote, urlparse
 
 
 def normalize_tag(value: str) -> str:
-    return " ".join(value.strip().lower().split())
+    """Normalize user/source text for lexical matching without mutating stored metadata.
+
+    Treat punctuation/separators as token boundaries so variants such as
+    ``found-footage`` and ``found footage`` match the same classifier alias.
+    """
+    normalized = value.strip().lower()
+    normalized = re.sub(r"[^\w]+", " ", normalized, flags=re.UNICODE)
+    return " ".join(normalized.split())
 
 
 def normalize_topic_category(value: str) -> str:
