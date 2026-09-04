@@ -30,6 +30,8 @@ class ContentItemsService:
         min_score: Optional[float] = None,
         min_views: Optional[int] = None,
         min_performance_ratio: Optional[float] = None,
+        topic_id: Optional[int] = None,
+        min_topic_confidence: float = 0.0,
         sort_by: Optional[str] = "score",
         sort_order: Optional[str] = "desc",
     ):
@@ -44,6 +46,8 @@ class ContentItemsService:
             min_score=min_score,
             min_views=min_views,
             min_performance_ratio=min_performance_ratio,
+            topic_id=topic_id,
+            min_topic_confidence=min_topic_confidence,
             sort_by=sort_by,
             sort_order=sort_order,
         )
