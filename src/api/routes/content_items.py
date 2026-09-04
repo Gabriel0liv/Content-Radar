@@ -25,6 +25,8 @@ def get_content_items(
     min_score: Optional[float] = None,
     min_views: Optional[int] = None,
     min_performance_ratio: Optional[float] = None,
+    topic_id: Optional[int] = Query(None, ge=1),
+    min_topic_confidence: float = Query(0.0, ge=0.0, le=1.0),
     sort_by: Literal["score", "views", "published_at", "collected_at", "views_per_day", "performance_ratio", "last_seen_at"] = "score",
     sort_order: Literal["asc", "desc"] = "desc",
     db: Session = Depends(get_db),
@@ -41,6 +43,8 @@ def get_content_items(
         min_score=min_score,
         min_views=min_views,
         min_performance_ratio=min_performance_ratio,
+        topic_id=topic_id,
+        min_topic_confidence=min_topic_confidence,
         sort_by=sort_by,
         sort_order=sort_order,
     )
