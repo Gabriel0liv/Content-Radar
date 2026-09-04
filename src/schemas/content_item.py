@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Dict, Any, Literal, List
 
@@ -14,9 +14,11 @@ class ContentItemBase(BaseModel):
     youtube_video_id: Optional[str] = None
     youtube_category_id: Optional[str] = None
     youtube_category_name: Optional[str] = None
-    youtube_tags_json: List[str] = []
-    youtube_topics_json: List[str] = []
+    youtube_tags_json: List[str] = Field(default_factory=list)
+    youtube_topics_json: List[str] = Field(default_factory=list)
     topic_classification_version: Optional[str] = None
+    performance_ratio: Optional[float] = None
+    performance_baseline_samples: int = 0
     published_at: Optional[datetime] = None
     views: Optional[int] = 0
     likes: Optional[int] = 0
@@ -49,6 +51,8 @@ class ContentItemUpdate(BaseModel):
     youtube_tags_json: Optional[List[str]] = None
     youtube_topics_json: Optional[List[str]] = None
     topic_classification_version: Optional[str] = None
+    performance_ratio: Optional[float] = None
+    performance_baseline_samples: Optional[int] = None
     views: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
