@@ -2,6 +2,7 @@ from collections import defaultdict
 from datetime import datetime, timezone
 from typing import List, Optional
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from src.models.content_item import ContentItem
@@ -37,6 +38,14 @@ def should_promote_tag(term: str, video_count: int, channel_count: int, manual_u
     if manual_usage > 0:
         return True
     return video_count >= 3 and channel_count >= 2
+
+
+def index_is_stale(index_timestamp, source_timestamp) -> bool:
+    if index_timestamp is None:
+        return True
+    if source_timestamp is None:
+        return False
+    return source_timestamp > index_timestamp
 
 
 class DiscoveryTermsService:
@@ -148,11 +157,20 @@ class DiscoveryTermsService:
         self.db.commit()
         return count
 
+    def _latest_source_change(self):
+        latest_content = self.db.query(func.max(ContentItem.last_seen_at)).scalar()
+        latest_topic = self.db.query(func.max(Topic.updated_at)).scalar()
+        timestamps = [timestamp for timestamp in (latest_content, latest_topic) if timestamp is not None]
+        return max(timestamps) if timestamps else None
+
+    def _latest_index_change(self):
+        return self.db.query(func.max(DiscoveryTerm.last_seen_at)).scalar()
+
     def search(self, query: str, limit: int = 20) -> List[DiscoveryTerm]:
         normalized = normalize_tag(query)
         if not normalized:
             return []
-        if self.db.query(DiscoveryTerm.id).first() is None:
+        if index_is_stale(self._latest_index_change(), self._latest_source_change()):
             self.rebuild()
         return (
             self.db.query(DiscoveryTerm)
