@@ -86,10 +86,11 @@ class TopicClassifier:
                     if self._contains_alias(text, alias)
                 }
                 if matched_aliases:
-                    # Multiple independent matching terms strengthen evidence without
-                    # allowing one source category to dominate the entire score.
-                    multiplier = min(1.0 + 0.35 * (len(matched_aliases) - 1), 1.75)
-                    contribution = min(source_weight * multiplier, source_weight * 1.75)
+                    # Multiple distinct signals from the same source should meaningfully
+                    # strengthen the classification (e.g. SMP + creeper + redstone),
+                    # while still using diminishing returns and a hard cap.
+                    multiplier = min(1.0 + 0.55 * (len(matched_aliases) - 1), 2.25)
+                    contribution = source_weight * multiplier
                     confidence += contribution
                     for alias in sorted(matched_aliases):
                         signals.append(TopicSignalEvidence(source=source_name, signal=alias, weight=source_weight))
