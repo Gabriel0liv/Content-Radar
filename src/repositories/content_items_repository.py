@@ -25,7 +25,21 @@ class ContentItemsRepository:
             ContentItem.youtube_video_id == youtube_video_id
         ).order_by(ContentItem.id.asc()).first()
 
-    def list(self, limit: int = 500, offset: int = 0, search: Optional[str] = None, source: Optional[str] = None, content_type: Optional[str] = None, status: Optional[str] = None, topic_seed: Optional[str] = None, min_score: Optional[float] = None, min_views: Optional[int] = None, sort_by: Optional[str] = "score", sort_order: Optional[str] = "desc") -> Tuple[List[ContentItem], int]:
+    def list(
+        self,
+        limit: int = 500,
+        offset: int = 0,
+        search: Optional[str] = None,
+        source: Optional[str] = None,
+        content_type: Optional[str] = None,
+        status: Optional[str] = None,
+        topic_seed: Optional[str] = None,
+        min_score: Optional[float] = None,
+        min_views: Optional[int] = None,
+        min_performance_ratio: Optional[float] = None,
+        sort_by: Optional[str] = "score",
+        sort_order: Optional[str] = "desc",
+    ) -> Tuple[List[ContentItem], int]:
         query = self.db.query(ContentItem)
         if source and source != "Todos":
             query = query.filter(ContentItem.source == source)
@@ -39,6 +53,8 @@ class ContentItemsRepository:
             query = query.filter(ContentItem.score >= min_score)
         if min_views is not None:
             query = query.filter(ContentItem.views >= min_views)
+        if min_performance_ratio is not None:
+            query = query.filter(ContentItem.performance_ratio >= min_performance_ratio)
         if search:
             search_pattern = f"%{search}%"
             query = query.filter(
@@ -53,13 +69,14 @@ class ContentItemsRepository:
             "published_at": ContentItem.published_at,
             "collected_at": ContentItem.collected_at,
             "views_per_day": ContentItem.views_per_day,
+            "performance_ratio": ContentItem.performance_ratio,
             "last_seen_at": ContentItem.last_seen_at,
         }
         sort_column = sorting_whitelist.get(sort_by, ContentItem.score)
         if sort_order == "asc":
-            query = query.order_by(sort_column.asc(), ContentItem.published_at.asc())
+            query = query.order_by(sort_column.asc().nullslast(), ContentItem.published_at.asc())
         else:
-            query = query.order_by(sort_column.desc(), ContentItem.published_at.desc())
+            query = query.order_by(sort_column.desc().nullslast(), ContentItem.published_at.desc())
         return query.offset(offset).limit(limit).all(), total
 
     def save(self, item: ContentItem) -> ContentItem:
@@ -75,6 +92,7 @@ class ContentItemsRepository:
                 "title", "description", "url", "channel_title", "channel_id",
                 "youtube_video_id", "youtube_category_id", "youtube_category_name",
                 "youtube_tags_json", "youtube_topics_json", "topic_classification_version",
+                "performance_ratio", "performance_baseline_samples",
                 "published_at", "views", "likes", "comments", "views_per_day", "score",
                 "topic_seed", "discovery_query", "language", "country_code", "raw_json",
             ):
