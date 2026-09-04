@@ -18,6 +18,8 @@ export function useContentItems() {
     content_type: getParam("content_type", "Todos"),
     status: getParam("status", "Todos"),
     topic_seed: getParam("topic_seed", "Todos"),
+    topic_id: getParam("topic_id", "") ? parseInt(getParam("topic_id", "")) : 0,
+    min_topic_confidence: getParam("min_topic_confidence", "") ? parseFloat(getParam("min_topic_confidence", "")) : 0.7,
     min_score: getParam("min_score", "") ? parseFloat(getParam("min_score", "")) : 0,
     min_views: getParam("min_views", "") ? parseInt(getParam("min_views", "")) : 0,
     min_performance_ratio: getParam("min_performance_ratio", "") ? parseFloat(getParam("min_performance_ratio", "")) : 0,
@@ -40,7 +42,8 @@ export function useContentItems() {
   const updateURL = useCallback((newFilters: typeof filters) => {
     const params = new URLSearchParams();
     Object.entries(newFilters).forEach(([key, val]) => {
-      if (val !== undefined && val !== null && val !== "" && val !== "Todos" && val !== 0) {
+      const isDefaultConfidence = key === "min_topic_confidence" && Number(val) === 0.7;
+      if (!isDefaultConfidence && val !== undefined && val !== null && val !== "" && val !== "Todos" && val !== 0) {
         params.set(key, String(val));
       }
     });
@@ -60,6 +63,8 @@ export function useContentItems() {
         content_type: filters.content_type,
         status: filters.status,
         topic_seed: filters.topic_seed,
+        topic_id: filters.topic_id > 0 ? filters.topic_id : undefined,
+        min_topic_confidence: filters.topic_id > 0 ? filters.min_topic_confidence : undefined,
         min_score: filters.min_score > 0 ? filters.min_score : undefined,
         min_views: filters.min_views > 0 ? filters.min_views : undefined,
         min_performance_ratio: filters.min_performance_ratio > 0 ? filters.min_performance_ratio : undefined,
@@ -72,7 +77,7 @@ export function useContentItems() {
     } finally {
       setLoading(false);
     }
-  }, [filters.limit, filters.offset, debouncedSearch, filters.source, filters.content_type, filters.status, filters.topic_seed, filters.min_score, filters.min_views, filters.min_performance_ratio, filters.sort_by, filters.sort_order]);
+  }, [filters.limit, filters.offset, debouncedSearch, filters.source, filters.content_type, filters.status, filters.topic_seed, filters.topic_id, filters.min_topic_confidence, filters.min_score, filters.min_views, filters.min_performance_ratio, filters.sort_by, filters.sort_order]);
 
   useEffect(() => { void fetchData(); }, [fetchData]);
 
@@ -92,6 +97,8 @@ export function useContentItems() {
       content_type: "Todos",
       status: "Todos",
       topic_seed: "Todos",
+      topic_id: 0,
+      min_topic_confidence: 0.7,
       min_score: 0,
       min_views: 0,
       min_performance_ratio: 0,
