@@ -3,6 +3,8 @@
 import { Activity } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { GlobalSearch } from "@/components/search/global-search";
+
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export function Topbar() {
@@ -23,9 +25,10 @@ export function Topbar() {
   }, []);
 
   return (
-    <header className="fixed right-0 top-0 z-10 flex h-16 w-[calc(100%-16rem)] items-center justify-between border-b border-slate-800 bg-[#0b101c]/90 px-8 backdrop-blur-sm">
-      <span className="text-xs font-semibold uppercase tracking-wider text-slate-500">Pesquisa e referências</span>
-      <div className="flex items-center gap-2 rounded-full border border-slate-800/80 bg-slate-900/50 px-3 py-1.5 text-xs">
+    <header className="fixed right-0 top-0 z-10 flex h-16 w-[calc(100%-16rem)] items-center gap-6 border-b border-slate-800 bg-[#0b101c]/90 px-8 backdrop-blur-sm">
+      <div className="shrink-0 text-xs font-semibold uppercase tracking-wider text-slate-500">Pesquisa e referências</div>
+      <div className="flex flex-1 justify-center"><GlobalSearch /></div>
+      <div className="flex shrink-0 items-center gap-2 rounded-full border border-slate-800/80 bg-slate-900/50 px-3 py-1.5 text-xs">
         <Activity className="h-3.5 w-3.5 text-indigo-400" />
         <span className="font-medium text-slate-400">API</span>
         {online === null ? <span className="text-slate-500">…</span> : online ? <span className="font-semibold text-emerald-400">Online</span> : <span className="font-semibold text-rose-400">Offline</span>}
