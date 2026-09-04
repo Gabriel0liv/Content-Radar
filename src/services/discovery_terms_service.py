@@ -106,7 +106,6 @@ class DiscoveryTermsService:
                 if item.channel_id:
                     stat["channels"].add(item.channel_id)
 
-            seen_tags = set()
             for raw_tag in item.youtube_tags_json or []:
                 normalized = normalize_tag(raw_tag)
                 if not normalized:
@@ -117,7 +116,6 @@ class DiscoveryTermsService:
                 stat["videos"].add(item.id)
                 if item.channel_id:
                     stat["channels"].add(item.channel_id)
-                seen_tags.add(normalized)
 
         for normalized, stat in category_stats.items():
             self._upsert(
@@ -154,6 +152,8 @@ class DiscoveryTermsService:
         normalized = normalize_tag(query)
         if not normalized:
             return []
+        if self.db.query(DiscoveryTerm.id).first() is None:
+            self.rebuild()
         return (
             self.db.query(DiscoveryTerm)
             .filter(
