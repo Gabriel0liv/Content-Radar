@@ -147,6 +147,11 @@ def test_transcription_mode_schema():
 
 def test_transcript_versioning():
     print("\nRunning test_transcript_versioning (DB integration)...")
+    # Register all ORM models referenced by string relationships before SQLAlchemy
+    # configures mappers in this isolated integration test process.
+    from src.models.search import SearchConfig, SearchRun  # noqa: F401
+    from src.models.content_item import ContentItem, ContentItemEvent  # noqa: F401
+    from src.models.topic import ContentItemTopic, Topic  # noqa: F401
     from src.db.session import SessionLocal
     from src.services.references_service import ReferencesService
     from src.schemas.references import ReferenceSourceCreate, TranscriptCreate
