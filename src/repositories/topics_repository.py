@@ -20,6 +20,17 @@ class TopicsRepository:
             Topic.parent_id == parent_id,
         ).first()
 
+    def find_topic_by_name_any_type(self, name: str) -> Optional[Topic]:
+        normalized = normalize_topic_name(name)
+        priority = {"topic": 0, "subtopic": 1, "format": 2, "series": 3}
+        matches = self.db.query(Topic).filter(
+            Topic.normalized_name == normalized,
+            Topic.status == "active",
+        ).all()
+        if not matches:
+            return None
+        return sorted(matches, key=lambda topic: (priority.get(topic.type, 99), topic.id))[0]
+
     def create_topic(self, payload: TopicCreate) -> Topic:
         normalized_name = normalize_topic_name(payload.name)
         existing = self.find_topic(normalized_name, payload.type, payload.parent_id)
@@ -45,6 +56,17 @@ class TopicsRepository:
             query = query.filter(Topic.status == status)
         return query.order_by(Topic.name.asc()).all()
 
+    def get_content_topic(self, content_item_id: int, topic_id: int) -> Optional[ContentItemTopic]:
+        return self.db.query(ContentItemTopic).filter(
+            ContentItemTopic.content_item_id == content_item_id,
+            ContentItemTopic.topic_id == topic_id,
+        ).first()
+
+    def list_content_topics(self, content_item_id: int) -> List[ContentItemTopic]:
+        return self.db.query(ContentItemTopic).filter(
+            ContentItemTopic.content_item_id == content_item_id
+        ).all()
+
     def upsert_content_topic(
         self,
         content_item_id: int,
@@ -54,10 +76,7 @@ class TopicsRepository:
         signals: List[Dict],
         classifier_version: Optional[str],
     ) -> ContentItemTopic:
-        association = self.db.query(ContentItemTopic).filter(
-            ContentItemTopic.content_item_id == content_item_id,
-            ContentItemTopic.topic_id == topic_id,
-        ).first()
+        association = self.get_content_topic(content_item_id, topic_id)
         if association is None:
             association = ContentItemTopic(
                 content_item_id=content_item_id,
