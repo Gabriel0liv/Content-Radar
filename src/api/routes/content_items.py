@@ -1,13 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from typing import List, Optional, Literal
+from typing import Optional, Literal
 from src.db.session import get_db
 from src.schemas.content_item import (
     ContentItem,
     ContentItemStatusUpdate,
     ContentItemCurationUpdate,
     ContentItemListResponse,
-    ContentItemSummary
+    ContentItemSummary,
 )
 from src.services.content_items_service import ContentItemsService
 
@@ -24,13 +24,11 @@ def get_content_items(
     topic_seed: Optional[str] = None,
     min_score: Optional[float] = None,
     min_views: Optional[int] = None,
-    sort_by: Literal["score", "views", "published_at", "collected_at", "views_per_day", "last_seen_at"] = "score",
+    min_performance_ratio: Optional[float] = None,
+    sort_by: Literal["score", "views", "published_at", "collected_at", "views_per_day", "performance_ratio", "last_seen_at"] = "score",
     sort_order: Literal["asc", "desc"] = "desc",
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
-    """
-    List content items with optional query parameters, search, pagination, and sorting.
-    """
     service = ContentItemsService(db)
     return service.list_items(
         limit=limit,
@@ -42,55 +40,32 @@ def get_content_items(
         topic_seed=topic_seed,
         min_score=min_score,
         min_views=min_views,
+        min_performance_ratio=min_performance_ratio,
         sort_by=sort_by,
-        sort_order=sort_order
+        sort_order=sort_order,
     )
 
 @router.get("/summary", response_model=ContentItemSummary)
 def get_content_items_summary(db: Session = Depends(get_db)):
-    """
-    Fetch aggregated metrics (total, new, by source, max score, max views).
-    """
-    service = ContentItemsService(db)
-    return service.get_summary_stats()
+    return ContentItemsService(db).get_summary_stats()
 
 @router.get("/{item_id}", response_model=ContentItem)
 def get_content_item(item_id: int, db: Session = Depends(get_db)):
-    """
-    Fetch details of a single content item.
-    """
-    service = ContentItemsService(db)
-    item = service.get_item(item_id)
+    item = ContentItemsService(db).get_item(item_id)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
     return item
 
 @router.patch("/{item_id}", response_model=ContentItem)
-def update_item_curation(
-    item_id: int,
-    curation_update: ContentItemCurationUpdate,
-    db: Session = Depends(get_db)
-):
-    """
-    Update curation fields of a content item (status, notes, production_notes, rejected_reason).
-    """
-    service = ContentItemsService(db)
-    item = service.update_item_curation(item_id, curation_update)
+def update_item_curation(item_id: int, curation_update: ContentItemCurationUpdate, db: Session = Depends(get_db)):
+    item = ContentItemsService(db).update_item_curation(item_id, curation_update)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
     return item
 
 @router.patch("/{item_id}/status", response_model=ContentItem)
-def update_item_status(
-    item_id: int,
-    status_update: ContentItemStatusUpdate,
-    db: Session = Depends(get_db)
-):
-    """
-    Update the status of a content item and record associated transition timestamps.
-    """
-    service = ContentItemsService(db)
-    item = service.update_item_status(item_id, status_update.status)
+def update_item_status(item_id: int, status_update: ContentItemStatusUpdate, db: Session = Depends(get_db)):
+    item = ContentItemsService(db).update_item_status(item_id, status_update.status)
     if not item:
         raise HTTPException(status_code=404, detail="Content item not found")
     return item
