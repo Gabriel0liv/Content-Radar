@@ -1,42 +1,42 @@
 {
   "Minecraft": {
     "aliases": ["minecraft", "creeper", "nether", "ender dragon", "redstone", "smp", "hardcore", "modpack", "forge", "fabric"],
-    "weights": {"youtube_tag": 0.32, "youtube_topic": 0.22, "title": 0.28, "description": 0.12, "transcript": 0.08, "channel_profile": 0.18},
+    "weights": {"youtube_tag": 0.32, "youtube_topic": 0.22, "title": 0.28, "description": 0.12, "transcript": 0.45, "channel_profile": 0.18},
     "minimum_confidence": 0.55
   },
   "Analog Horror": {
     "aliases": ["analog horror", "found footage", "broadcast interruption", "vhs horror", "emergency broadcast"],
-    "weights": {"youtube_tag": 0.35, "title": 0.25, "description": 0.2, "transcript": 0.12, "channel_profile": 0.15},
+    "weights": {"youtube_tag": 0.35, "title": 0.25, "description": 0.2, "transcript": 0.38, "channel_profile": 0.15},
     "minimum_confidence": 0.5
   },
   "ARG": {
     "aliases": ["arg", "alternate reality game", "puzzle trail", "hidden code", "cipher"],
-    "weights": {"youtube_tag": 0.35, "title": 0.24, "description": 0.2, "transcript": 0.12},
+    "weights": {"youtube_tag": 0.35, "title": 0.24, "description": 0.2, "transcript": 0.38},
     "minimum_confidence": 0.5
   },
   "SMP": {
     "aliases": ["smp", "survival multiplayer", "multiplayer server"],
-    "weights": {"youtube_tag": 0.5, "title": 0.3, "description": 0.2, "transcript": 0.1},
+    "weights": {"youtube_tag": 0.5, "title": 0.3, "description": 0.2, "transcript": 0.42},
     "minimum_confidence": 0.5
   },
   "Roleplay": {
     "aliases": ["roleplay", "role play", "rp", "character lore", "in character"],
-    "weights": {"youtube_tag": 0.5, "title": 0.28, "description": 0.2, "transcript": 0.12},
+    "weights": {"youtube_tag": 0.5, "title": 0.28, "description": 0.2, "transcript": 0.42},
     "minimum_confidence": 0.5
   },
   "Hardcore": {
     "aliases": ["hardcore", "one life", "100 days"],
-    "weights": {"youtube_tag": 0.4, "title": 0.3, "description": 0.18, "transcript": 0.1},
+    "weights": {"youtube_tag": 0.4, "title": 0.3, "description": 0.18, "transcript": 0.38},
     "minimum_confidence": 0.5
   },
   "Modded Minecraft": {
     "aliases": ["modded minecraft", "modpack", "forge mod", "fabric mod"],
-    "weights": {"youtube_tag": 0.42, "title": 0.28, "description": 0.2, "transcript": 0.12},
+    "weights": {"youtube_tag": 0.42, "title": 0.28, "description": 0.2, "transcript": 0.4},
     "minimum_confidence": 0.5
   },
   "Lore": {
     "aliases": ["lore", "storyline", "canon", "backstory"],
-    "weights": {"youtube_tag": 0.35, "title": 0.25, "description": 0.2, "transcript": 0.12},
+    "weights": {"youtube_tag": 0.35, "title": 0.25, "description": 0.2, "transcript": 0.38},
     "minimum_confidence": 0.45
   }
 }
