@@ -1,5 +1,4 @@
-from types import SimpleNamespace
-
+from src.models.topic import ContentItemTopic, Topic
 from src.schemas.content_item import DetectedTopic
 
 
@@ -14,8 +13,12 @@ def test_content_item_detected_topics_property_orders_by_confidence():
     from src.models.content_item import ContentItem
 
     item = ContentItem()
+    lore = Topic(id=2, name="Lore", normalized_name="lore", type="format", status="active")
+    minecraft = Topic(id=1, name="Minecraft", normalized_name="minecraft", type="topic", status="active")
+
     item.topic_associations = [
-        SimpleNamespace(confidence=0.62, source="rules", topic=SimpleNamespace(id=2, name="Lore", type="format")),
-        SimpleNamespace(confidence=0.94, source="transcript", topic=SimpleNamespace(id=1, name="Minecraft", type="topic")),
+        ContentItemTopic(confidence=0.62, source="rules", topic=lore),
+        ContentItemTopic(confidence=0.94, source="transcript", topic=minecraft),
     ]
+
     assert [topic["name"] for topic in item.detected_topics] == ["Minecraft", "Lore"]
