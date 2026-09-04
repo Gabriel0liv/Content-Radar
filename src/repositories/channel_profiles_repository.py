@@ -14,11 +14,17 @@ class ChannelProfilesRepository:
     def get_by_channel_id(self, channel_id: str) -> Optional[ChannelProfile]:
         return self.db.query(ChannelProfile).filter(ChannelProfile.channel_id == channel_id).first()
 
-    def list_recent_content(self, channel_id: str, limit: int = 30) -> List[ContentItem]:
+    def list_recent_content(
+        self,
+        channel_id: str,
+        limit: int = 30,
+        exclude_content_item_id: Optional[int] = None,
+    ) -> List[ContentItem]:
+        query = self.db.query(ContentItem).filter(ContentItem.channel_id == channel_id)
+        if exclude_content_item_id is not None:
+            query = query.filter(ContentItem.id != exclude_content_item_id)
         return (
-            self.db.query(ContentItem)
-            .filter(ContentItem.channel_id == channel_id)
-            .order_by(ContentItem.published_at.desc().nullslast(), ContentItem.id.desc())
+            query.order_by(ContentItem.published_at.desc().nullslast(), ContentItem.id.desc())
             .limit(limit)
             .all()
         )
