@@ -19,8 +19,9 @@ fastapi
 uvicorn[standard]
 alembic
 pydantic-settings
+python-multipart
 yt-dlp
 httpx
 
-# High-fidelity audio transcription fallback
+# Existing lightweight audio transcription path
 faster-whisper
