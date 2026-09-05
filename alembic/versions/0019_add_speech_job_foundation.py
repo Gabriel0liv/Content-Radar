@@ -81,7 +81,9 @@ def upgrade() -> None:
         sa.Column("display_name", sa.Text(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
         sa.Column("updated_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()),
+        sa.CheckConstraint("transcript_id IS NOT NULL OR speech_job_id IS NOT NULL", name="check_speech_speaker_mapping_owner"),
         sa.UniqueConstraint("transcript_id", "raw_speaker", name="uq_speech_speaker_mapping_transcript_raw"),
+        sa.UniqueConstraint("speech_job_id", "raw_speaker", name="uq_speech_speaker_mapping_job_raw"),
     )
     op.create_index("idx_speech_speaker_mappings_transcript_id", "speech_speaker_mappings", ["transcript_id"])
 
