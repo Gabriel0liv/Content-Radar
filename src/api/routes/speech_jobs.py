@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterator
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
@@ -31,10 +32,10 @@ def create_stt_job(
     request: SpeechSttJobCreate,
     service: SpeechJobsService = Depends(get_speech_jobs_service),
 ):
-    try:
-        return service.create_stt_job(request)
-    except SpeechReferenceNotFoundError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    raise HTTPException(
+        status_code=400,
+        detail="STT manual exige um arquivo. Use /speech/jobs/stt/upload.",
+    )
 
 
 @router.post("/jobs/stt/upload", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
@@ -53,17 +54,21 @@ def upload_stt_job(
 ):
     if not file.filename:
         raise HTTPException(status_code=400, detail="Arquivo sem nome")
-    request = SpeechSttJobCreate(
-        preset=preset,
-        language=language,
-        diarization=diarization,
-        num_speakers=num_speakers,
-        min_speakers=min_speakers,
-        max_speakers=max_speakers,
-        quiet_speech=quiet_speech,
-        initial_prompt=initial_prompt,
-        reference_source_id=reference_source_id,
-    )
+    try:
+        request = SpeechSttJobCreate(
+            preset=preset,
+            language=language,
+            diarization=diarization,
+            num_speakers=num_speakers,
+            min_speakers=min_speakers,
+            max_speakers=max_speakers,
+            quiet_speech=quiet_speech,
+            initial_prompt=initial_prompt,
+            reference_source_id=reference_source_id,
+        )
+    except ValidationError as exc:
+        raise HTTPException(status_code=422, detail=exc.errors()) from exc
+
     try:
         return service.create_uploaded_stt_job(
             request,
