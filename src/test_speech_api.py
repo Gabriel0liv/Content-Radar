@@ -84,18 +84,10 @@ def test_native_status_stays_200_without_worker():
     assert response.json()["worker"]["online"] is False
 
 
-def test_create_stt_job_returns_queued_job():
-    class FakeService:
-        def create_stt_job(self, request):
-            return _job(requested_config_json=request.model_dump(exclude_none=True))
-
-    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
-    try:
-        response = client.post("/speech/jobs/stt", json={"preset": "fast"})
-    finally:
-        app.dependency_overrides.clear()
-    assert response.status_code == 201
-    assert response.json()["status"] == "queued"
+def test_json_stt_job_requires_managed_upload():
+    response = client.post("/speech/jobs/stt", json={"preset": "fast"})
+    assert response.status_code == 400
+    assert "upload" in response.json()["detail"].lower()
 
 
 def test_create_stt_job_rejects_arbitrary_input_path():
@@ -131,6 +123,15 @@ def test_upload_stt_job_streams_file_to_managed_service():
     assert captured["bytes"] == b"abc123"
     assert captured["request"].diarization is True
     assert captured["request"].num_speakers == 2
+
+
+def test_upload_stt_job_returns_422_for_invalid_speaker_range():
+    response = client.post(
+        "/speech/jobs/stt/upload",
+        data={"preset": "balanced", "min_speakers": "4", "max_speakers": "2"},
+        files={"file": ("voice.wav", b"abc123", "audio/wav")},
+    )
+    assert response.status_code == 422
 
 
 def test_cancel_queued_job():
