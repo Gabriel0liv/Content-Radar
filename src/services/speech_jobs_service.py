@@ -41,7 +41,7 @@ class SpeechJobsService:
             operation="stt",
             requested_config_json=requested,
             resolved_config_json=resolved,
-            input_path=request.input_path,
+            input_path=None,
             reference_source_id=request.reference_source_id,
         )
 
