@@ -95,7 +95,7 @@ class Transcript(Base):
     duplicate_of_transcript = relationship("Transcript", remote_side=[id])
 
     __table_args__ = (
-        CheckConstraint("source_method IN ('manual_caption', 'auto_caption', 'manual', 'audio_to_text_future')", name="check_transcripts_source_method"),
+        CheckConstraint("source_method IN ('manual_caption', 'auto_caption', 'manual', 'audio_to_text_future', 'whisperx')", name="check_transcripts_source_method"),
         Index("idx_transcripts_reference_source_id", reference_source_id),
         Index("idx_transcripts_ref_source_id_hash", reference_source_id, full_text_hash),
         Index("idx_transcripts_ref_source_id_is_active", reference_source_id, is_active),
