@@ -9,6 +9,8 @@ from src.schemas.speech import SpeechSttPresetName
 
 
 class SpeechSttJobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     preset: SpeechSttPresetName = "balanced"
     language: str | None = None
     diarization: bool = False
