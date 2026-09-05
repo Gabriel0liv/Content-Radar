@@ -5,6 +5,7 @@ import time
 
 from src.db.session import SessionLocal
 from src.repositories.speech_jobs import SpeechJobRepository
+from src.services.speech_result_importer import SpeechResultImporter, SpeechResultImportError
 from src.services.speech_worker_protocol import JobCancelled, UnsupportedOperationError
 from speech_worker.runtime.capabilities import detect_capabilities
 from speech_worker.runtime.executor import SpeechExecutor
@@ -19,6 +20,10 @@ def run_once(repo: SpeechJobRepository, executor: SpeechExecutor, worker_id: str
         return False
 
     try:
+        def cancel_check() -> bool:
+            current = repo.get(job.id)
+            return bool(current and current.cancel_requested_at)
+
         result = executor.execute(
             job,
             progress_callback=lambda stage, pct, msg: repo.heartbeat(
@@ -29,11 +34,19 @@ def run_once(repo: SpeechJobRepository, executor: SpeechExecutor, worker_id: str
                 progress_percent=pct,
                 progress_message=msg,
             ),
-            cancel_check=lambda: bool(repo.get(job.id) and repo.get(job.id).cancel_requested_at),
+            cancel_check=cancel_check,
         )
+        if cancel_check():
+            raise JobCancelled("Job cancelado antes da finalização")
+
+        importer = SpeechResultImporter(repo.db)
+        if result.get("kind") == "stt":
+            importer.finalize_stt(job, result)
         repo.complete(job.id, worker_id, result)
     except JobCancelled:
         repo.mark_cancelled(job.id, worker_id)
+    except SpeechResultImportError as exc:
+        repo.fail(job.id, worker_id, "result_import_error", str(exc))
     except UnsupportedOperationError as exc:
         repo.fail(job.id, worker_id, "unsupported_operation", str(exc))
     except Exception as exc:
