@@ -1,12 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import content_items, discovery_terms, global_search, health, ideas, ingest, references, search
+from src.api.routes import content_items, discovery_terms, global_search, health, ideas, ingest, references, search, speech
 
 app = FastAPI(
     title="Content Radar API",
     description="Backend for content discovery, transcript references and lightweight video ideas",
-    version="1.3.0",
+    version="1.4.0",
 )
 
 app.add_middleware(
@@ -31,3 +31,4 @@ app.include_router(references.reference_sources_router, prefix="/reference-sourc
 app.include_router(references.reference_import_jobs_router, prefix="/reference-import-jobs", tags=["Reference Import Jobs"])
 app.include_router(references.transcripts_router, prefix="/transcripts", tags=["Transcripts"])
 app.include_router(ideas.router, tags=["Ideas"])
+app.include_router(speech.router, prefix="/speech", tags=["Speech"])
