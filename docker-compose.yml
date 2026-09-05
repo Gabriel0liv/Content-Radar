@@ -52,6 +52,7 @@ services:
     environment:
       - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
       - N8N_SEARCH_WEBHOOK_URL=${N8N_SEARCH_WEBHOOK_URL:-}
+      - SPEECH_DATA_ROOT=/app/data/speech
       - CANVA_CLIENT_ID=${CANVA_CLIENT_ID:-}
       - CANVA_CLIENT_SECRET=${CANVA_CLIENT_SECRET:-}
       - CANVA_REDIRECT_URI=${CANVA_REDIRECT_URI:-}
@@ -59,6 +60,8 @@ services:
       - CANVA_OAUTH_AUTHORIZE_URL=${CANVA_OAUTH_AUTHORIZE_URL:-https://www.canva.com/api/oauth/authorize}
       - CANVA_SCOPES=${CANVA_SCOPES:-design:content:write design:meta:read}
       - CANVA_ACCESS_TOKEN=${CANVA_ACCESS_TOKEN:-}
+    volumes:
+      - ./data:/app/data
     depends_on:
       postgres:
         condition: service_healthy
@@ -69,6 +72,29 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+    networks:
+      - content_radar_net
+    restart: unless-stopped
+
+  speech_worker:
+    build: .
+    container_name: dark_content_speech_worker
+    command: python -m speech_worker.worker
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
+      - SPEECH_DATA_ROOT=/app/data/speech
+      - SPEECH_WORKER_ID=${SPEECH_WORKER_ID:-local-worker-1}
+      - SPEECH_WORKER_POLL_SECONDS=${SPEECH_WORKER_POLL_SECONDS:-2}
+      - SPEECH_WORKER_LEASE_SECONDS=${SPEECH_WORKER_LEASE_SECONDS:-120}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     networks:
       - content_radar_net
     restart: unless-stopped
