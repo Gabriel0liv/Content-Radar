@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
@@ -52,23 +52,3 @@ class SpeechSttPresetSummary(BaseModel):
     name: SpeechSttPresetName
     label: str
     description: str
-
-
-class SpeechEngineStatus(BaseModel):
-    engine: str = "speech_studio"
-    online: bool
-    base_url: str
-    message: str
-    details: dict[str, Any] | None = None
-
-
-class SpeechSttEngineResult(BaseModel):
-    success: bool
-    output_dir: str | None = None
-    artifacts: list[dict[str, Any]] = Field(default_factory=list)
-    stdout: str = ""
-    stderr: str = ""
-    returncode: int | None = None
-    logs: str = ""
-    error: str | None = None
-    message: str = ""
