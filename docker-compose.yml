@@ -82,6 +82,7 @@ services:
       dockerfile: Dockerfile.speech
     container_name: dark_content_speech_worker
     command: python -m speech_worker.worker
+    gpus: all
     env_file:
       - .env
     environment:
