@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable
 
 
 class JobCancelled(RuntimeError):
@@ -15,8 +14,11 @@ class UnsupportedOperationError(RuntimeError):
 @dataclass(slots=True)
 class WorkerCapabilities:
     worker_id: str
-    operations: list[str] = field(default_factory=lambda: ["stt", "tts"])
+    operations: list[str] = field(default_factory=list)
     cpu_available: bool = True
+    ffmpeg_available: bool = False
+    whisperx_available: bool = False
+    torch_available: bool = False
     cuda_available: bool = False
     gpu_name: str | None = None
     vram_mb: int | None = None
@@ -29,6 +31,9 @@ class WorkerCapabilities:
             "worker_id": self.worker_id,
             "operations": list(self.operations),
             "cpu_available": self.cpu_available,
+            "ffmpeg_available": self.ffmpeg_available,
+            "whisperx_available": self.whisperx_available,
+            "torch_available": self.torch_available,
             "cuda_available": self.cuda_available,
             "gpu_name": self.gpu_name,
             "vram_mb": self.vram_mb,
