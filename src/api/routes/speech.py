@@ -4,19 +4,9 @@ from fastapi import APIRouter
 
 from src.schemas.speech import SpeechSttOptions
 from src.services.speech_presets import list_builtin_stt_presets, resolve_stt_config
-from src.services.speech_studio_client import SpeechStudioClient
 
 
 router = APIRouter()
-
-
-def get_speech_studio_client() -> SpeechStudioClient:
-    return SpeechStudioClient()
-
-
-@router.get("/status")
-def get_status():
-    return get_speech_studio_client().health()
 
 
 @router.get("/stt/presets")
