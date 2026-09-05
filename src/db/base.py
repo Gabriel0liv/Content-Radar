@@ -7,6 +7,7 @@ from src.models.topic import Topic, ContentItemTopic  # noqa
 from src.models.channel_profile import ChannelProfile  # noqa
 from src.models.discovery_term import DiscoveryTerm  # noqa
 from src.models.canva_oauth import CanvaOAuthState, CanvaOAuthToken  # noqa
+from src.models.speech import SpeechArtifact, SpeechJob, SpeechPreset, SpeechSpeakerMapping, SpeechWorkerState  # noqa
 from src.models.video_workshop import (
     VideoProject,
     VideoProjectNote,
