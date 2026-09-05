@@ -18,7 +18,6 @@ class SpeechSttJobCreate(BaseModel):
     quiet_speech: bool = False
     initial_prompt: str | None = None
     reference_source_id: int | None = None
-    input_path: str | None = None
 
     @model_validator(mode="after")
     def validate_speaker_range(self):
