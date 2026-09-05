@@ -77,7 +77,9 @@ services:
     restart: unless-stopped
 
   speech_worker:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.speech
     container_name: dark_content_speech_worker
     command: python -m speech_worker.worker
     env_file:
@@ -88,6 +90,10 @@ services:
       - SPEECH_WORKER_ID=${SPEECH_WORKER_ID:-local-worker-1}
       - SPEECH_WORKER_POLL_SECONDS=${SPEECH_WORKER_POLL_SECONDS:-2}
       - SPEECH_WORKER_LEASE_SECONDS=${SPEECH_WORKER_LEASE_SECONDS:-120}
+      - SPEECH_KEEP_WORK_FILES=${SPEECH_KEEP_WORK_FILES:-false}
+      - SPEECH_DIARIZE_MODEL=${SPEECH_DIARIZE_MODEL:-pyannote/speaker-diarization-3.1}
+      - HF_TOKEN=${HF_TOKEN:-}
+      - HF_HOME=/app/data/speech/models/huggingface
     volumes:
       - ./data:/app/data
     depends_on:
