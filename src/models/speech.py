@@ -99,7 +99,9 @@ class SpeechSpeakerMapping(Base):
     job = relationship("SpeechJob", back_populates="speaker_mappings")
 
     __table_args__ = (
+        CheckConstraint("transcript_id IS NOT NULL OR speech_job_id IS NOT NULL", name="check_speech_speaker_mapping_owner"),
         UniqueConstraint("transcript_id", "raw_speaker", name="uq_speech_speaker_mapping_transcript_raw"),
+        UniqueConstraint("speech_job_id", "raw_speaker", name="uq_speech_speaker_mapping_job_raw"),
         Index("idx_speech_speaker_mappings_transcript_id", transcript_id),
     )
 
