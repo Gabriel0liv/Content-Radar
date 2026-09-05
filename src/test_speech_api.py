@@ -98,6 +98,14 @@ def test_create_stt_job_returns_queued_job():
     assert response.json()["status"] == "queued"
 
 
+def test_create_stt_job_rejects_arbitrary_input_path():
+    response = client.post(
+        "/speech/jobs/stt",
+        json={"preset": "fast", "input_path": "C:/Users/me/secret.wav"},
+    )
+    assert response.status_code == 422
+
+
 def test_cancel_queued_job():
     class FakeService:
         def cancel_job(self, job_id):
