@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import time
 
+import src.db.base  # noqa: F401  # register all SQLAlchemy models before mapper configuration
 from src.db.session import SessionLocal
 from src.repositories.speech_jobs import SpeechJobRepository
 from src.services.speech_result_importer import SpeechResultImporter, SpeechResultImportError
