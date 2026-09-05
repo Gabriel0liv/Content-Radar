@@ -1,0 +1,3 @@
+# Speech worker-only lightweight dependencies.
+# Shared SQLAlchemy/Postgres/Pydantic dependencies come from root requirements.txt.
+soundfile>=0.12,<1
