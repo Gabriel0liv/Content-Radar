@@ -1,9 +1,38 @@
+from datetime import datetime, timezone
+from types import SimpleNamespace
+
 from fastapi.testclient import TestClient
 
 from src.api.main import app
+from src.api.routes.speech_jobs import get_speech_jobs_service
 
 
 client = TestClient(app)
+
+
+def _job(**overrides):
+    now = datetime.now(timezone.utc)
+    data = {
+        "id": 1,
+        "operation": "stt",
+        "status": "queued",
+        "stage": "queued",
+        "progress_percent": 0,
+        "progress_message": None,
+        "requested_config_json": {"preset": "fast"},
+        "resolved_config_json": {"model": "small"},
+        "reference_source_id": None,
+        "transcript_id": None,
+        "worker_id": None,
+        "error_code": None,
+        "error_message": None,
+        "created_at": now,
+        "started_at": None,
+        "finished_at": None,
+        "updated_at": now,
+    }
+    data.update(overrides)
+    return SimpleNamespace(**data)
 
 
 def test_stt_presets_expose_three_builtin_modes():
@@ -29,3 +58,56 @@ def test_resolve_endpoint_returns_technical_config():
     assert body["resolved"]["no_diarization"] is False
     assert body["resolved"]["num_speakers"] == 2
     assert body["resolved"]["vad_onset"] == 0.1
+
+
+def test_native_status_stays_200_without_worker():
+    class FakeService:
+        def get_status(self):
+            return {
+                "mode": "native",
+                "queue": {"queued": 0, "running": 0},
+                "worker": {
+                    "online": False,
+                    "worker_id": None,
+                    "last_heartbeat_at": None,
+                    "capabilities": None,
+                },
+            }
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.get("/speech/status")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["mode"] == "native"
+    assert response.json()["worker"]["online"] is False
+
+
+def test_create_stt_job_returns_queued_job():
+    class FakeService:
+        def create_stt_job(self, request):
+            return _job(requested_config_json=request.model_dump(exclude_none=True))
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post("/speech/jobs/stt", json={"preset": "fast"})
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 201
+    assert response.json()["status"] == "queued"
+
+
+def test_cancel_queued_job():
+    class FakeService:
+        def cancel_job(self, job_id):
+            return _job(id=job_id, status="cancelled", stage="cancelled")
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post("/speech/jobs/7/cancel")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert response.json()["id"] == 7
+    assert response.json()["status"] == "cancelled"
