@@ -106,6 +106,33 @@ def test_create_stt_job_rejects_arbitrary_input_path():
     assert response.status_code == 422
 
 
+def test_upload_stt_job_streams_file_to_managed_service():
+    captured = {}
+
+    class FakeService:
+        def create_uploaded_stt_job(self, request, *, filename, chunks):
+            captured["request"] = request
+            captured["filename"] = filename
+            captured["bytes"] = b"".join(chunks)
+            return _job(requested_config_json=request.model_dump(exclude_none=True))
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/stt/upload",
+            data={"preset": "balanced", "diarization": "true", "num_speakers": "2"},
+            files={"file": ("voice.wav", b"abc123", "audio/wav")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert captured["filename"] == "voice.wav"
+    assert captured["bytes"] == b"abc123"
+    assert captured["request"].diarization is True
+    assert captured["request"].num_speakers == 2
+
+
 def test_cancel_queued_job():
     class FakeService:
         def cancel_job(self, job_id):
