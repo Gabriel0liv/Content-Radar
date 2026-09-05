@@ -92,6 +92,7 @@ class WhisperXSttEngine:
                 device,
                 compute_type=config.compute_type,
                 asr_options=asr_options,
+                vad_method="silero",
                 vad_options=vad_options,
             )
         except Exception as exc:
