@@ -11,6 +11,7 @@ interface SocialContextView {
   body?: string;
   author_handle?: string | null;
   usefulness_score?: number;
+  urls?: string[];
 }
 
 interface TranscriptSegmentView {
@@ -125,6 +126,16 @@ export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchC
               <div key={context.id ?? index} className="border-l-2 border-slate-700 pl-3 text-sm text-slate-300">
                 <p>{context.body || "Comentário sem texto"}</p>
                 <p className="mt-1 text-xs text-slate-500">{context.author_handle || "autor desconhecido"} · utilidade {Number(context.usefulness_score || 0).toFixed(1)}</p>
+                {!!context.urls?.length && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {context.urls.map((url) => (
+                      <a key={url} href={url} target="_blank" rel="noreferrer" className="inline-flex max-w-full items-center gap-1 rounded-md border border-slate-700 px-2 py-1 text-xs text-indigo-400 hover:border-indigo-800 hover:text-indigo-300">
+                        <span className="max-w-[320px] truncate">Fonte/link citado</span>
+                        <ExternalLink className="h-3 w-3 shrink-0" />
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             ))}
           </div>
