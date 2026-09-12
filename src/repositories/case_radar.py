@@ -8,6 +8,8 @@ from sqlalchemy.orm import Session
 
 from src.case_radar.types import Candidate
 from src.models.case_radar import (
+    CaseClaim,
+    CaseEvidence,
     CaseResearchQuery,
     CaseResearchRun,
     CaseSource,
@@ -313,6 +315,15 @@ class CaseRadarRepository:
                 )
             ).scalar_one_or_none()
         if existing is not None:
+            for key, value in values.items():
+                if hasattr(existing, key):
+                    setattr(existing, key, value)
+            if existing.body != body:
+                existing.body = body
+            if existing.parent_social_context_id != parent_social_context_id:
+                existing.parent_social_context_id = parent_social_context_id
+            self.db.commit()
+            self.db.refresh(existing)
             return existing
         item = SocialContextItem(
             source_id=source_id,
@@ -356,6 +367,87 @@ class CaseRadarRepository:
         self.db.commit()
         self.db.refresh(link)
         return link
+
+    def upsert_claim(
+        self,
+        *,
+        case_id: int,
+        normalized_claim_text: str,
+        claim_type: str,
+        status: str = "unverified",
+        confidence: float = 0.0,
+        entities_json: dict[str, Any] | None = None,
+        extracted_date: datetime | None = None,
+        extracted_location: str | None = None,
+    ) -> CaseClaim:
+        normalized = " ".join(normalized_claim_text.split())
+        claim = self.db.execute(
+            select(CaseClaim).where(
+                CaseClaim.case_id == case_id,
+                CaseClaim.normalized_claim_text == normalized,
+                CaseClaim.claim_type == claim_type,
+            )
+        ).scalar_one_or_none()
+        if claim is None:
+            claim = CaseClaim(
+                case_id=case_id,
+                normalized_claim_text=normalized,
+                claim_type=claim_type,
+            )
+            self.db.add(claim)
+        claim.status = status
+        claim.confidence = max(0.0, min(1.0, float(confidence)))
+        claim.entities_json = entities_json or {}
+        claim.extracted_date = extracted_date
+        claim.extracted_location = extracted_location
+        self.db.commit()
+        self.db.refresh(claim)
+        return claim
+
+    def link_evidence(
+        self,
+        *,
+        claim_id: int,
+        stance: str,
+        source_id: int | None = None,
+        social_context_item_id: int | None = None,
+        transcript_segment_id: int | None = None,
+        note: str | None = None,
+    ) -> CaseEvidence:
+        if source_id is None and social_context_item_id is None and transcript_segment_id is None:
+            raise ValueError("CaseEvidence exige ao menos um alvo")
+        stmt = select(CaseEvidence).where(
+            CaseEvidence.claim_id == claim_id,
+            CaseEvidence.stance == stance,
+        )
+        if source_id is None:
+            stmt = stmt.where(CaseEvidence.source_id.is_(None))
+        else:
+            stmt = stmt.where(CaseEvidence.source_id == source_id)
+        if social_context_item_id is None:
+            stmt = stmt.where(CaseEvidence.social_context_item_id.is_(None))
+        else:
+            stmt = stmt.where(CaseEvidence.social_context_item_id == social_context_item_id)
+        if transcript_segment_id is None:
+            stmt = stmt.where(CaseEvidence.transcript_segment_id.is_(None))
+        else:
+            stmt = stmt.where(CaseEvidence.transcript_segment_id == transcript_segment_id)
+        evidence = self.db.execute(stmt).scalar_one_or_none()
+        if evidence is None:
+            evidence = CaseEvidence(
+                claim_id=claim_id,
+                source_id=source_id,
+                social_context_item_id=social_context_item_id,
+                transcript_segment_id=transcript_segment_id,
+                stance=stance,
+                note=note,
+            )
+            self.db.add(evidence)
+        elif note is not None:
+            evidence.note = note
+        self.db.commit()
+        self.db.refresh(evidence)
+        return evidence
 
     def _owned_running(self, run_id: int, worker_id: str) -> CaseResearchRun:
         run = self.get_run(run_id)
