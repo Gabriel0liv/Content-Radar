@@ -41,6 +41,57 @@ class HttpSearchBackend:
         return data
 
 
+class DDGSSearchBackend:
+    """Free local metasearch backend. No API key is required."""
+
+    def __init__(self, *, region: str | None = None, backend: str | None = None, timeout: int = 10) -> None:
+        self.region = (region or os.getenv("CASE_RADAR_DDGS_REGION", "wt-wt")).strip() or "wt-wt"
+        self.backend = (backend or os.getenv("CASE_RADAR_DDGS_BACKEND", "auto")).strip() or "auto"
+        self.timeout = max(1, int(timeout))
+
+    def search(self, query: str, *, cursor: str | None = None, limit: int = 20) -> dict[str, Any]:
+        try:
+            from ddgs import DDGS
+        except ImportError as exc:
+            raise ProviderUnavailable("Backend gratuito DDGS não instalado") from exc
+        try:
+            page = max(1, int(cursor or "1"))
+        except ValueError:
+            page = 1
+        try:
+            rows = DDGS(timeout=self.timeout).text(
+                query,
+                region=self.region,
+                safesearch="moderate",
+                max_results=max(1, min(50, int(limit))),
+                page=page,
+                backend=self.backend,
+            )
+        except Exception as exc:
+            raise ProviderUnavailable("Busca web gratuita temporariamente indisponível") from exc
+        results = []
+        for row in rows or []:
+            if not isinstance(row, dict):
+                continue
+            url = row.get("href") or row.get("url")
+            if not url:
+                continue
+            results.append(
+                {
+                    "url": str(url),
+                    "title": row.get("title"),
+                    "snippet": row.get("body") or row.get("snippet"),
+                    "source_confidence": 0.45,
+                }
+            )
+        next_cursor = str(page + 1) if len(results) >= max(1, min(50, int(limit))) else None
+        return {
+            "results": results,
+            "next_cursor": next_cursor,
+            "backend": "ddgs",
+        }
+
+
 class WebSearchProvider:
     name = "web-search"
     method = "web_search"
@@ -52,6 +103,7 @@ class WebSearchProvider:
         target_platform: str = "web",
         site_domain: str | None = None,
         result_limit: int = 20,
+        allow_free_backend: bool = True,
     ) -> None:
         self.platform = target_platform
         self.site_domain = site_domain
@@ -59,7 +111,10 @@ class WebSearchProvider:
         if backend is None:
             endpoint = os.getenv("CASE_RADAR_WEB_SEARCH_URL", "").strip()
             api_key = os.getenv("CASE_RADAR_WEB_SEARCH_API_KEY", "").strip()
-            backend = HttpSearchBackend(endpoint, api_key) if endpoint else None
+            if endpoint:
+                backend = HttpSearchBackend(endpoint, api_key)
+            elif allow_free_backend:
+                backend = DDGSSearchBackend()
         self.backend = backend
         self.capabilities = ProviderCapabilities(
             search_supported=True,
@@ -97,7 +152,7 @@ class WebSearchProvider:
 
     def search(self, request: Any, query: Any, cursor: str | None = None) -> CandidatePage:
         if self.backend is None:
-            raise ProviderUnavailable("CASE_RADAR_WEB_SEARCH_URL não configurado", provider=self.name)
+            raise ProviderUnavailable("Nenhum backend de web search disponível", provider=self.name)
         query_text = self._query_text(query)
         data = self.backend.search(query_text, cursor=cursor, limit=self.result_limit)
         rows = data.get("results") or []
@@ -134,7 +189,7 @@ class WebSearchProvider:
         return CandidatePage(
             candidates=candidates,
             next_cursor=data.get("next_cursor"),
-            raw_json={"result_count": len(candidates)},
+            raw_json={"result_count": len(candidates), "backend": data.get("backend")},
         )
 
     def fetch_source(self, candidate: Candidate) -> SourceSnapshot:
