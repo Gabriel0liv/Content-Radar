@@ -32,6 +32,36 @@ def test_obvious_repost_merges_from_link_and_text_similarity():
     assert "shared_linked_url" in decision.reasons
 
 
+def test_duplicate_long_indexed_titles_merge_even_when_snippets_and_urls_differ():
+    a = ClusterFeatures(
+        canonical_url="https://example.com/watch/one",
+        title="Real Footage of Unexplained Videos That Shocked the Internet",
+        text="Compilation with several mysterious recordings and commentary.",
+    )
+    b = ClusterFeatures(
+        canonical_url="https://mirror.example/video/two",
+        title="Real Footage of Unexplained Videos That Shocked the Internet",
+        text="Watch the viral collection of unexplained clips online.",
+    )
+    decision = compare_sources(a, b)
+    assert decision.action == "merge"
+    assert "same_distinctive_title" in decision.reasons
+
+
+def test_near_duplicate_long_indexed_titles_merge():
+    a = ClusterFeatures(title="Real Footage of Unexplained Videos That Shocked the Internet")
+    b = ClusterFeatures(title="Real Footage of Unexplained Videos That Shocked The Internet!")
+    decision = compare_sources(a, b)
+    assert decision.action == "merge"
+    assert "same_distinctive_title" in decision.reasons
+
+
+def test_short_generic_titles_do_not_auto_merge():
+    a = ClusterFeatures(title="Unexplained Footage", text="lights above a city")
+    b = ClusterFeatures(title="Unexplained Footage", text="creature recorded in woods")
+    assert compare_sources(a, b).action != "merge"
+
+
 def test_similar_but_not_same_cases_stay_separate():
     a = ClusterFeatures(text="Black bear walking beside a road in Canada", alleged_location="Canada")
     b = ClusterFeatures(text="Unknown light flying above a forest in Japan", alleged_location="Japan")
