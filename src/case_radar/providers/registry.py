@@ -113,3 +113,46 @@ class ProviderRegistry:
         if not attempted:
             errors.append(ProviderUnavailable(f"Nenhum provider registrado para {platform}").as_dict())
         return ProviderSearchOutcome(page=None, provider_name=None, errors=errors)
+
+
+def build_default_registry() -> ProviderRegistry:
+    from src.case_radar.providers.instagram import (
+        InstagramLoggedInProvider,
+        InstagramOfficialProvider,
+        InstagramWebSearchProvider,
+    )
+    from src.case_radar.providers.reddit import RedditCaseRadarProvider
+    from src.case_radar.providers.tiktok import (
+        TikTokLoggedInProvider,
+        TikTokOfficialProvider,
+        TikTokWebSearchProvider,
+    )
+    from src.case_radar.providers.web_search import WebSearchProvider
+    from src.case_radar.providers.x import XLoggedInProvider, XOfficialApiProvider, XWebSearchProvider
+    from src.case_radar.providers.youtube import YouTubeCaseRadarProvider
+
+    registry = ProviderRegistry(
+        priorities={
+            "youtube": ["official_api", "web_search"],
+            "x": ["logged_in", "web_search", "official_api"],
+            "tiktok": ["logged_in", "web_search", "official_api"],
+            "instagram": ["logged_in", "web_search", "official_api"],
+            "reddit": ["public_http", "web_search"],
+            "web": ["web_search"],
+        }
+    )
+    registry.register(YouTubeCaseRadarProvider())
+    registry.register(WebSearchProvider(target_platform="youtube", site_domain="youtube.com"))
+    registry.register(XLoggedInProvider())
+    registry.register(XWebSearchProvider())
+    registry.register(XOfficialApiProvider())
+    registry.register(TikTokLoggedInProvider())
+    registry.register(TikTokWebSearchProvider())
+    registry.register(TikTokOfficialProvider())
+    registry.register(InstagramLoggedInProvider())
+    registry.register(InstagramWebSearchProvider())
+    registry.register(InstagramOfficialProvider())
+    registry.register(RedditCaseRadarProvider())
+    registry.register(WebSearchProvider(target_platform="reddit", site_domain="reddit.com"))
+    registry.register(WebSearchProvider())
+    return registry
