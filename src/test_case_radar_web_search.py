@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.case_radar.providers.base import ProviderUnavailable
-from src.case_radar.providers.web_search import WebSearchProvider
+from src.case_radar.providers.web_search import DDGSSearchBackend, WebSearchProvider
 from src.case_radar.url_normalization import canonicalize_url, infer_platform_from_url
 
 
@@ -66,13 +66,36 @@ def test_generic_web_provider_infers_social_platform_from_result_url():
     assert page.candidates[0].platform == "reddit"
 
 
-def test_web_search_without_backend_is_provider_unavailable(monkeypatch):
+def test_web_search_defaults_to_free_ddgs_backend(monkeypatch):
     monkeypatch.delenv("CASE_RADAR_WEB_SEARCH_URL", raising=False)
     monkeypatch.delenv("CASE_RADAR_WEB_SEARCH_API_KEY", raising=False)
     provider = WebSearchProvider()
+    assert isinstance(provider.backend, DDGSSearchBackend)
+    assert provider.is_available() is True
+
+
+def test_web_search_can_explicitly_disable_free_backend(monkeypatch):
+    monkeypatch.delenv("CASE_RADAR_WEB_SEARCH_URL", raising=False)
+    provider = WebSearchProvider(allow_free_backend=False)
     assert provider.is_available() is False
     with pytest.raises(ProviderUnavailable):
         provider.search(SimpleNamespace(), "query")
+
+
+def test_ddgs_backend_maps_library_failures_to_provider_unavailable(monkeypatch):
+    class BrokenDDGS:
+        def __init__(self, **kwargs):
+            pass
+
+        def text(self, *args, **kwargs):
+            raise RuntimeError("rate limited")
+
+    import ddgs
+
+    monkeypatch.setattr(ddgs, "DDGS", BrokenDDGS)
+    backend = DDGSSearchBackend()
+    with pytest.raises(ProviderUnavailable):
+        backend.search("test", limit=5)
 
 
 def test_web_search_raw_candidate_drops_obvious_secret_fields():
