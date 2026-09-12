@@ -32,6 +32,13 @@ def _extract_links(text: str) -> list[str]:
     return links
 
 
+def _option_int(options: Any, name: str, default: int) -> int:
+    value = getattr(options, name, None)
+    if value is None and isinstance(options, dict):
+        value = options.get(name)
+    return default if value is None else int(value)
+
+
 class RedditCaseRadarProvider:
     name = "reddit-public"
     platform = "reddit"
@@ -159,8 +166,8 @@ class RedditCaseRadarProvider:
 
     def fetch_social_context(self, source: Candidate | SourceSnapshot, options: Any) -> SocialContextPage:
         candidate = source.candidate if isinstance(source, SourceSnapshot) else source
-        max_comments = int(getattr(options, "max_comments", None) or (options.get("max_comments") if isinstance(options, dict) else 100) or 100)
-        max_depth = int(getattr(options, "max_depth", None) or (options.get("max_depth") if isinstance(options, dict) else 6) or 6)
+        max_comments = max(0, _option_int(options, "max_comments", 100))
+        max_depth = max(0, _option_int(options, "max_depth", 6))
         client = self._client()
         close_after = self.client is None
         try:
@@ -220,7 +227,7 @@ class RedditCaseRadarProvider:
                     )
                 )
                 replies = data.get("replies")
-                if isinstance(replies, dict):
+                if depth < max_depth and isinstance(replies, dict):
                     walk(((replies.get("data") or {}).get("children") or []), depth + 1)
 
         walk(roots, 0)
