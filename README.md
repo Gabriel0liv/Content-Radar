@@ -56,6 +56,8 @@ A pesquisa tenta:
 
 Comentários são tratados como **pistas/evidências**, não como fatos. Um comentário popular não é promovido a contexto confirmado só por ter muitos likes.
 
+Consultas de `source_hunt`, `context` e `debunk` servem para enriquecer casos existentes; somente descoberta `core`/`local_language` pode iniciar um caso. O número configurado em `desired_usable_cases` também funciona como limite dos casos finais pesquisados, enquanto as fontes excedentes continuam disponíveis como material auxiliar para deduplicação e contexto.
+
 #### Worker do Case Radar
 
 No Docker Compose:
@@ -92,11 +94,15 @@ Depois de aplicar as migrations, há dois smokes manuais úteis:
 
 ```powershell
 $env:PYTHONPATH="."
-python scripts/case_radar_provider_smoke.py --query "unexplained footage original source"
-python scripts/case_radar_run_smoke.py --theme "unexplained footage original source" --desired-cases 3
+python scripts/case_radar_provider_smoke.py --query "unexplained footage"
+python scripts/case_radar_run_smoke.py --theme "unexplained footage" --desired-cases 3
 ```
 
-O primeiro registra quais providers estão disponíveis e suas capabilities sem imprimir credenciais. O segundo cria uma pesquisa real pequena, executa uma iteração do worker e valida que uma run `completed`/`partially_completed` produziu ao menos um dossiê com URLs de fontes HTTP(S) válidas. Providers opcionais sem configuração aparecem como indisponíveis/skipped; isso não é, por si só, falha da aplicação.
+O primeiro registra quais providers estão disponíveis e suas capabilities sem imprimir credenciais. Providers independentes podem aparecer como `skipped`/indisponíveis quando faltam credenciais ou acesso; isso deve ser interpretado junto com os fallbacks disponíveis.
+
+O segundo cria uma pesquisa real pequena, executa uma iteração do worker e valida que uma run `completed`/`partially_completed` produziu dossiês com URLs HTTP(S) válidas. Ele também falha se a run criar mais casos finais do que `--desired-cases`, protegendo o contrato de quantidade e evitando que todo resultado auxiliar vire um caso separado.
+
+Uma run pode terminar como `partially_completed` mesmo atingindo a quantidade pedida quando algum provider opcional falha ou fica indisponível. Isso representa cobertura reduzida, não perda dos resultados já obtidos.
 
 #### Limites conhecidos
 
@@ -220,7 +226,7 @@ docker compose config
 alembic upgrade head
 ```
 
-Antes de considerar a feature pronta para merge, também deve ser executada a suíte backend completa disponível:
+Antes de considerar a feature pronta para merge, também deve ser executada a suíte backend completa disponível, sem deselects específicos do Case Radar:
 
 ```powershell
 python -m pytest -q
