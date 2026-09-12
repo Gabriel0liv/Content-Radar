@@ -12,6 +12,9 @@ from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities,
 from src.case_radar.url_normalization import canonicalize_url
 
 
+_DEFAULT_ADAPTER_MODULE = "src.case_radar.providers.instagram_instagrapi"
+
+
 def _parse_datetime(value: Any) -> datetime | None:
     if isinstance(value, datetime):
         return value
@@ -90,6 +93,10 @@ class InstagramLoggedInProvider:
         if adapter is not None:
             self._refresh_capabilities(adapter)
 
+    @staticmethod
+    def _module_name() -> str:
+        return os.getenv("CASE_RADAR_INSTAGRAM_ADAPTER_MODULE", _DEFAULT_ADAPTER_MODULE).strip() or _DEFAULT_ADAPTER_MODULE
+
     def _refresh_capabilities(self, adapter: Any) -> None:
         self.capabilities.source_fetch_supported = callable(getattr(adapter, "fetch_source", None))
         social_supported = callable(getattr(adapter, "fetch_social_context", None))
@@ -102,9 +109,7 @@ class InstagramLoggedInProvider:
             return self.adapter
         if not self.session_file or not Path(self.session_file).is_file():
             raise ProviderUnavailable("Sessão Instagram não configurada", provider=self.name)
-        module_name = os.getenv("CASE_RADAR_INSTAGRAM_ADAPTER_MODULE", "").strip()
-        if not module_name:
-            raise ProviderUnavailable("Adapter Instagram logged-in não configurado", provider=self.name)
+        module_name = self._module_name()
         try:
             module = importlib.import_module(module_name)
             self.adapter = module.create_adapter(self.session_file)
@@ -119,7 +124,7 @@ class InstagramLoggedInProvider:
         if self.adapter is not None:
             self._refresh_capabilities(self.adapter)
             return True
-        if not (self.session_file and Path(self.session_file).is_file() and os.getenv("CASE_RADAR_INSTAGRAM_ADAPTER_MODULE", "").strip()):
+        if not (self.session_file and Path(self.session_file).is_file()):
             return False
         try:
             self._load_adapter()
@@ -152,6 +157,7 @@ class InstagramLoggedInProvider:
                     author_display_name=row.get("author_display_name"),
                     title_or_caption=row.get("caption"),
                     text=row.get("caption"),
+                    published_at=_parse_datetime(row.get("published_at")),
                     media_type=row.get("media_type") or "video",
                     thumbnail_url=row.get("thumbnail_url"),
                     duration_seconds=row.get("duration_seconds"),
