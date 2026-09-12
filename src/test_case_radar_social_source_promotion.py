@@ -4,18 +4,12 @@ from src.case_radar.orchestrator_social import SocialResearchOrchestrator
 
 
 class FakeDb:
-    def __init__(self):
-        self.links = [SimpleNamespace(case_id=22, source_id=1)]
-
     def execute(self, statement):
         class Result:
-            def __init__(self, values):
-                self.values = values
-
             def scalars(self):
-                return self.values
+                return [22]
 
-        return Result(self.links)
+        return Result()
 
 
 class FakeRepo:
