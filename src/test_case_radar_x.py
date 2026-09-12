@@ -36,6 +36,17 @@ class FakeLoggedInClient:
         return self.result
 
 
+class FakeRepliesClient(FakeLoggedInClient):
+    def __init__(self, result=None, replies=None, error=None):
+        super().__init__(result=result, error=error)
+        self.replies = replies or []
+
+    def get_tweet_replies(self, tweet_id):
+        if self.error:
+            raise self.error
+        return self.replies
+
+
 class FakeTweet:
     id = "123"
     text = "strange forest footage"
@@ -92,6 +103,39 @@ def test_x_logged_in_capabilities_do_not_claim_unimplemented_replies():
     assert provider.capabilities.replies_supported is False
     page = provider.search(SimpleNamespace(), "forest")
     assert page.candidates[0].author_handle == "@tester"
+
+
+def test_x_logged_in_capabilities_enable_when_client_has_reply_method():
+    provider = XLoggedInProvider(client=FakeRepliesClient())
+    assert provider.capabilities.comments_supported is True
+    assert provider.capabilities.replies_supported is True
+
+
+def test_x_logged_in_reply_adapter_normalizes_social_context():
+    reply = SimpleNamespace(
+        id="r1",
+        in_reply_to_status_id="123",
+        text="Original source: https://example.com/original?utm_source=x",
+        created_at="2025-01-01T11:00:00+00:00",
+        favorite_count=20,
+        reply_count=1,
+        retweet_count=0,
+        user=SimpleNamespace(screen_name="helper", name="Helper"),
+        urls=["https://example.com/original?utm_source=x"],
+    )
+    provider = XLoggedInProvider(client=FakeRepliesClient(replies=[reply]))
+    source = SimpleNamespace(candidate=None)
+    candidate = SimpleNamespace(
+        external_id="123",
+        canonical_url="https://x.com/tester/status/123",
+    )
+
+    page = provider.fetch_social_context(candidate, {"max_comments": 20, "max_depth": 3})
+
+    assert page.items[0].platform_item_id == "r1"
+    assert page.items[0].parent_id == "123"
+    assert page.items[0].author_handle == "@helper"
+    assert page.items[0].external_links == ["https://example.com/original"]
 
 
 def test_x_logged_in_auth_error_is_sanitized():
