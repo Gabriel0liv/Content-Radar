@@ -95,6 +95,11 @@ export interface ReferenceSourceListResponse {
   offset: number;
 }
 
+export interface ReferenceImportRawResult extends Record<string, unknown> {
+  version_number?: number | string;
+  same_hash_as_previous?: boolean;
+}
+
 export interface ReferenceImportJob {
   id: number;
   reference_source_id: number | null;
@@ -105,7 +110,7 @@ export interface ReferenceImportJob {
   selected_language: string | null;
   selected_caption_type: string | null;
   error_message: string | null;
-  raw_result_json: Record<string, unknown> | null;
+  raw_result_json: ReferenceImportRawResult | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
