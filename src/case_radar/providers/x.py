@@ -188,8 +188,8 @@ class XLoggedInProvider:
         self.capabilities = ProviderCapabilities(
             search_supported=True,
             source_fetch_supported=True,
-            comments_supported=True,
-            replies_supported=True,
+            comments_supported=False,
+            replies_supported=False,
             quote_posts_supported=False,
             media_metadata_supported=True,
             historical_search_supported=True,
@@ -292,4 +292,4 @@ class XLoggedInProvider:
         return SourceSnapshot(candidate=self._object_to_candidate(tweet, candidate.discovery_query), raw_json={"source": "x_logged_in"})
 
     def fetch_social_context(self, source: Candidate | SourceSnapshot, options: Any) -> SocialContextPage:
-        raise ProviderUnavailable("Coleta de replies logged-in será habilitada quando o adapter suportar árvore estável", provider=self.name)
+        raise ProviderUnavailable("Coleta de replies logged-in ainda não suportada de forma estável", provider=self.name)
