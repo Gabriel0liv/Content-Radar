@@ -16,7 +16,7 @@ from src.case_radar.providers.base import (
     ProviderUnavailable,
 )
 from src.case_radar.providers.web_search import WebSearchProvider
-from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities, SocialContextPage, SourceSnapshot
+from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities, SocialContextPage, SocialContextRecord, SourceSnapshot
 from src.case_radar.url_normalization import canonicalize_url
 
 
@@ -197,12 +197,29 @@ class XLoggedInProvider:
             official_api=False,
             cost_class="free",
         )
+        if client is not None:
+            self._refresh_social_capabilities(client)
+
+    @staticmethod
+    def _social_method(client: Any):
+        for method_name in ("fetch_social_context", "get_tweet_replies", "get_replies"):
+            method = getattr(client, method_name, None)
+            if callable(method):
+                return method_name, method
+        return None, None
+
+    def _refresh_social_capabilities(self, client: Any) -> None:
+        method_name, _ = self._social_method(client)
+        supported = method_name is not None
+        self.capabilities.comments_supported = supported
+        self.capabilities.replies_supported = supported
 
     def _session_exists(self) -> bool:
         return bool(self.session_file and Path(self.session_file).is_file())
 
     def is_available(self) -> bool:
         if self.client is not None:
+            self._refresh_social_capabilities(self.client)
             return True
         if not self._session_exists():
             return False
@@ -214,6 +231,7 @@ class XLoggedInProvider:
 
     def _load_client(self):
         if self.client is not None:
+            self._refresh_social_capabilities(self.client)
             return self.client
         if not self._session_exists():
             raise ProviderUnavailable("Sessão X não configurada", provider=self.name)
@@ -221,6 +239,8 @@ class XLoggedInProvider:
             twikit = importlib.import_module("twikit")
             client = twikit.Client(language="en-US")
             client.load_cookies(self.session_file)
+            self.client = client
+            self._refresh_social_capabilities(client)
             return client
         except ImportError as exc:
             raise ProviderUnavailable("Adapter X logged-in não instalado", provider=self.name) from exc
@@ -263,6 +283,43 @@ class XLoggedInProvider:
             return asyncio.run(value)
         raise ProviderPermanentError("X logged-in não pode abrir event loop dentro de event loop ativo")
 
+    @staticmethod
+    def _social_record_from_any(item: Any, depth: int = 0) -> SocialContextRecord:
+        if isinstance(item, dict):
+            get = item.get
+            user = get("user") or {}
+            user_name = user.get("screen_name") if isinstance(user, dict) else None
+        else:
+            get = lambda key, default=None: getattr(item, key, default)
+            user = get("user")
+            user_name = getattr(user, "screen_name", None) if user else None
+        external_links = get("external_links") or []
+        if not external_links:
+            urls = get("urls") or []
+            external_links = [str(url) for url in urls]
+        parent_id = get("in_reply_to_status_id") or get("parent_id")
+        item_id = get("id")
+        engagement = get("engagement") or {
+            "likes": int(get("favorite_count", 0) or 0),
+            "replies": int(get("reply_count", 0) or 0),
+            "reposts": int(get("retweet_count", 0) or 0),
+        }
+        return SocialContextRecord(
+            platform_item_id=str(item_id) if item_id is not None else None,
+            parent_id=str(parent_id) if parent_id is not None else None,
+            depth=max(0, int(get("depth", depth) or depth)),
+            author_handle=(f"@{user_name}" if user_name else get("author_handle")),
+            author_display_name=get("author_display_name") or (getattr(user, "name", None) if user and not isinstance(user, dict) else None),
+            body=str(get("text") or get("full_text") or get("body") or ""),
+            published_at=_safe_datetime(get("created_at") or get("published_at")),
+            engagement=engagement,
+            permalink=canonicalize_url(str(get("permalink"))) if get("permalink") else None,
+            external_links=[canonicalize_url(str(url)) for url in external_links],
+            pinned=bool(get("pinned", False)),
+            author_reply=bool(get("author_reply", False)),
+            raw_json={},
+        )
+
     def search(self, request: Any, query: Any, cursor: str | None = None) -> CandidatePage:
         client = self._load_client()
         query_text = " ".join(str(getattr(query, "query_text", query)).split())
@@ -292,4 +349,28 @@ class XLoggedInProvider:
         return SourceSnapshot(candidate=self._object_to_candidate(tweet, candidate.discovery_query), raw_json={"source": "x_logged_in"})
 
     def fetch_social_context(self, source: Candidate | SourceSnapshot, options: Any) -> SocialContextPage:
-        raise ProviderUnavailable("Coleta de replies logged-in ainda não suportada de forma estável", provider=self.name)
+        client = self._load_client()
+        method_name, method = self._social_method(client)
+        if method is None:
+            raise ProviderUnavailable("Coleta de replies X não suportada pelo client instalado", provider=self.name)
+        candidate = source.candidate if isinstance(source, SourceSnapshot) else source
+        if not candidate.external_id:
+            raise ProviderPermanentError("Post da X sem id para coletar replies", provider=self.name)
+        max_comments = int(getattr(options, "max_comments", None) or (options.get("max_comments") if isinstance(options, dict) else 100) or 100)
+        max_depth = int(getattr(options, "max_depth", None) or (options.get("max_depth") if isinstance(options, dict) else 6) or 6)
+        try:
+            if method_name == "fetch_social_context":
+                value = method(candidate.canonical_url, external_id=candidate.external_id, max_comments=max_comments, max_depth=max_depth)
+            else:
+                value = method(candidate.external_id)
+            result = self._run_awaitable(value)
+        except Exception as exc:
+            text = str(exc).casefold()
+            if any(token in text for token in ("login", "auth", "challenge", "cookie", "session")):
+                raise ProviderAuthExpired("Sessão X inválida, expirada ou em challenge", provider=self.name) from exc
+            if "429" in text or "rate" in text:
+                raise ProviderRateLimited("X logged-in rate limit atingido", provider=self.name) from exc
+            raise ProviderUnavailable("Falha ao coletar replies da X", provider=self.name) from exc
+        rows = list(result or [])[:max_comments]
+        items = [self._social_record_from_any(row) for row in rows]
+        return SocialContextPage(items=items, raw_json={"collected": len(items), "method": method_name})
