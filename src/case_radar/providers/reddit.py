@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -9,6 +10,26 @@ import httpx
 from src.case_radar.providers.base import ProviderPermanentError, ProviderRateLimited, ProviderUnavailable
 from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities, SocialContextPage, SocialContextRecord, SourceSnapshot
 from src.case_radar.url_normalization import canonicalize_url
+
+
+_URL_RE = re.compile(r"https?://[^\s<>()]+", re.IGNORECASE)
+
+
+def _extract_links(text: str) -> list[str]:
+    links: list[str] = []
+    seen: set[str] = set()
+    for raw in _URL_RE.findall(text or ""):
+        cleaned = raw.rstrip(".,;:!?)]}'\"")
+        if not cleaned:
+            continue
+        try:
+            normalized = canonicalize_url(cleaned)
+        except Exception:
+            normalized = cleaned
+        if normalized not in seen:
+            seen.add(normalized)
+            links.append(normalized)
+    return links
 
 
 class RedditCaseRadarProvider:
@@ -172,17 +193,27 @@ class RedditCaseRadarProvider:
                 if author == "[deleted]":
                     author = None
                 permalink = data.get("permalink")
+                body_text = str(body)
+                links = _extract_links(body_text)
+                explicit_link = data.get("link_url")
+                if explicit_link:
+                    try:
+                        normalized_link = canonicalize_url(str(explicit_link))
+                    except Exception:
+                        normalized_link = str(explicit_link)
+                    if normalized_link not in links:
+                        links.append(normalized_link)
                 items.append(
                     SocialContextRecord(
                         platform_item_id=str(data.get("id")) if data.get("id") is not None else None,
                         parent_id=str(data.get("parent_id")) if data.get("parent_id") is not None else None,
                         depth=depth,
                         author_handle=author,
-                        body=str(body),
+                        body=body_text,
                         published_at=self._timestamp(data.get("created_utc")),
                         engagement={"score": int(data.get("score") or 0)},
                         permalink=canonicalize_url(f"https://reddit.com{permalink}") if permalink else None,
-                        external_links=[str(url) for url in (data.get("link_url") and [data.get("link_url")] or [])],
+                        external_links=links,
                         pinned=bool(data.get("stickied")),
                         author_reply=bool(author and candidate.author_handle and author == candidate.author_handle),
                         raw_json={"subreddit": data.get("subreddit")},
