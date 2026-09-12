@@ -62,7 +62,7 @@ def _thread_payload():
                             "id": "c1",
                             "parent_id": "t3_post1",
                             "author": "poster",
-                            "body": "Original upload is here: https://example.com/original",
+                            "body": "Original upload is here: https://example.com/original?utm_source=reddit",
                             "created_utc": 1730000100,
                             "score": 15,
                             "permalink": "/r/mystery/comments/post1/strange_forest/c1/",
@@ -116,6 +116,7 @@ def test_reddit_comments_preserve_parent_child_hierarchy_and_deleted_values():
     assert [item.platform_item_id for item in page.items] == ["c1", "c2"]
     assert page.items[0].depth == 0
     assert page.items[0].author_reply is True
+    assert page.items[0].external_links == ["https://example.com/original"]
     assert page.items[1].depth == 1
     assert page.items[1].parent_id == "t1_c1"
     assert page.items[1].author_handle is None
