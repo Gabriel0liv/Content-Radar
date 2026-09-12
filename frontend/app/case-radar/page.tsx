@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowRight, RefreshCw } from "lucide-react";
 
 import { ResearchForm } from "@/components/case-radar/research-form";
@@ -27,19 +27,32 @@ export default function CaseRadarPage() {
   }, []);
 
   useEffect(() => {
-    refresh();
-    const timer = window.setInterval(refresh, 4000);
-    return () => window.clearInterval(timer);
+    void refresh();
   }, [refresh]);
 
-  const onCreated = (run: CaseResearchRun) => setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+  const hasActiveRun = useMemo(
+    () => runs.some((run) => run.status === "queued" || run.status === "running"),
+    [runs],
+  );
+
+  useEffect(() => {
+    if (!hasActiveRun) return;
+    const timer = window.setInterval(() => void refresh(), 4000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveRun, refresh]);
+
+  const onCreated = (run: CaseResearchRun) => {
+    setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
+  };
 
   return (
     <div className="space-y-7">
       <div className="border-b border-slate-850 pb-5">
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-indigo-400">Pesquisa investigativa</p>
         <h2 className="mt-1 text-3xl font-bold tracking-tight text-white">Case Radar</h2>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">Procure casos, encontre versões anteriores, comentários úteis, contexto externo e possíveis explicações sem tratar uma alegação como fato só porque ela viralizou.</p>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">
+          Procure casos, encontre versões anteriores, comentários úteis, contexto externo e possíveis explicações sem tratar uma alegação como fato só porque ela viralizou.
+        </p>
       </div>
 
       <ResearchForm onCreated={onCreated} />
@@ -50,7 +63,7 @@ export default function CaseRadarPage() {
             <h3 className="text-lg font-semibold text-white">Pesquisas recentes</h3>
             <p className="text-xs text-slate-500">A execução continua no worker mesmo se esta página for fechada.</p>
           </div>
-          <button onClick={refresh} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-900 disabled:opacity-50">
+          <button onClick={() => void refresh()} disabled={loading} className="inline-flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-xs font-semibold text-slate-300 hover:bg-slate-900 disabled:opacity-50">
             <RefreshCw className={`h-3.5 w-3.5 ${loading ? "animate-spin" : ""}`} /> Atualizar
           </button>
         </div>
