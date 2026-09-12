@@ -47,18 +47,19 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run a small real Case Radar research smoke.")
     parser.add_argument(
         "--theme",
-        default="unexplained footage original source",
+        default="unexplained footage",
         help="Controlled research theme used for the smoke run.",
     )
     parser.add_argument("--desired-cases", type=int, default=3)
     args = parser.parse_args()
+    desired_cases = max(1, min(3, args.desired_cases))
 
     db = SessionLocal()
     try:
         service = CaseRadarService(db)
         request = CaseResearchCreate(
             theme=args.theme,
-            desired_usable_cases=max(1, min(3, args.desired_cases)),
+            desired_usable_cases=desired_cases,
             languages=["en"],
             platforms=["web", "youtube", "reddit", "x"],
             priorities=["original source", "verifiable context"],
@@ -86,6 +87,7 @@ def main() -> int:
             "worked": worked,
             "status": current.status if current else None,
             "stage": current.stage if current else None,
+            "desired_cases": desired_cases,
             "discovered_candidates": current.discovered_candidates if current else 0,
             "clustered_cases": current.clustered_cases if current else 0,
             "usable_cases": current.usable_cases if current else 0,
@@ -99,10 +101,12 @@ def main() -> int:
             return 2
         if not cases:
             return 3
-        if any(not item["has_dossier"] for item in dossier_checks):
+        if len(cases) > desired_cases or current.usable_cases > desired_cases:
             return 4
-        if any(item["invalid_source_urls"] for item in dossier_checks):
+        if any(not item["has_dossier"] for item in dossier_checks):
             return 5
+        if any(item["invalid_source_urls"] for item in dossier_checks):
+            return 6
         return 0
     finally:
         db.close()
