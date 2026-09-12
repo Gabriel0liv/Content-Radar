@@ -140,7 +140,9 @@ def compare_sources(
         reasons.append("similar_transcript")
 
     if a.thumbnail_hash and b.thumbnail_hash and a.thumbnail_hash == b.thumbnail_hash:
-        score += 0.60
+        # Same thumbnail is a useful repost signal, but alone (or with merely similar
+        # text) is not strong enough to collapse two cases automatically.
+        score += 0.45
         reasons.append("same_thumbnail_hash")
 
     if a.alleged_date and b.alleged_date and str(a.alleged_date) == str(b.alleged_date):
