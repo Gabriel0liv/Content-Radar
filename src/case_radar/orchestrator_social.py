@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from sqlalchemy import select
 
@@ -21,7 +20,8 @@ class SocialResearchOrchestrator(CaseRadarOrchestrator):
 
     @staticmethod
     def _external_id_from_url(platform: str, url: str) -> str | None:
-        parts = [part for part in urlparse(url).path.split("/") if part]
+        parsed = urlparse(url)
+        parts = [part for part in parsed.path.split("/") if part]
         if platform == "x" and "status" in parts:
             index = parts.index("status")
             return parts[index + 1] if index + 1 < len(parts) else None
@@ -30,12 +30,8 @@ class SocialResearchOrchestrator(CaseRadarOrchestrator):
             return parts[index + 1] if index + 1 < len(parts) else None
         if platform == "instagram" and len(parts) >= 2 and parts[0] in {"p", "reel", "reels", "tv"}:
             return parts[1]
-        if platform == "youtube":
-            parsed = urlparse(url)
-            if parsed.path == "/watch":
-                from urllib.parse import parse_qs
-
-                return (parse_qs(parsed.query).get("v") or [None])[0]
+        if platform == "youtube" and parsed.path == "/watch":
+            return (parse_qs(parsed.query).get("v") or [None])[0]
         return None
 
     @staticmethod
@@ -73,7 +69,28 @@ class SocialResearchOrchestrator(CaseRadarOrchestrator):
         return int(values[0]) if values else None
 
     def _try_enrich_promoted(self, source: ResearchSource) -> ResearchSource:
-        candidate = self._candidate_from_source(source)
+        parsed_external_id = self._external_id_from_url(source.platform, source.canonical_url)
+        fetch_candidate = Candidate(
+            platform=source.platform,
+            external_id=parsed_external_id,
+            canonical_url=source.canonical_url,
+            author_handle=source.author_handle,
+            author_display_name=source.author_display_name,
+            title_or_caption=source.title_or_caption,
+            text=source.text,
+            published_at=source.published_at,
+            media_type=source.media_type,
+            thumbnail_url=source.thumbnail_url,
+            duration_seconds=source.duration_seconds,
+            language=source.language,
+            engagement=source.engagement_json or {},
+            hashtags=source.hashtags_json or [],
+            relation=source.relation_json,
+            discovery_query=f"social-source:{source.id}",
+            discovery_method="social_link",
+            raw_json=source.raw_json or {},
+            source_confidence=float(source.source_confidence or 0.0),
+        )
         for method in self.registry.methods_for(source.platform):
             provider = self.registry.get(source.platform, method)
             if provider is None or not provider.capabilities.source_fetch_supported:
@@ -81,10 +98,23 @@ class SocialResearchOrchestrator(CaseRadarOrchestrator):
             try:
                 if not provider.is_available():
                     continue
-                snapshot = provider.fetch_source(candidate)
+                snapshot = provider.fetch_source(fetch_candidate)
             except Exception:
                 continue
-            return self.repo.upsert_source(snapshot.candidate, source.run_id, source.query_id)
+            # Keep the row URL-keyed. A previously discovered URL may not yet have an
+            # external id, and switching the upsert key here could violate uq_run_url.
+            enriched = snapshot.candidate.model_copy(
+                update={
+                    "external_id": None,
+                    "canonical_url": source.canonical_url,
+                    "relation": {
+                        **(snapshot.candidate.relation or {}),
+                        **(source.relation_json or {}),
+                        "resolved_external_id": snapshot.candidate.external_id or parsed_external_id,
+                    },
+                }
+            )
+            return self.repo.upsert_source(enriched, source.run_id, source.query_id)
         return source
 
     def _promote_social_url(
@@ -106,13 +136,14 @@ class SocialResearchOrchestrator(CaseRadarOrchestrator):
         role, confidence, reason = self._role_for_social(item)
         candidate = Candidate(
             platform=platform,
-            external_id=self._external_id_from_url(platform, canonical),
+            external_id=None,
             canonical_url=canonical,
             title_or_caption=None,
             text=None,
             relation={
                 "linked_from_source_id": int(origin_source.id),
                 "social_context_item_id": int(item.id),
+                "url_external_id": self._external_id_from_url(platform, canonical),
             },
             discovery_query=f"social-context:{item.id}",
             discovery_method="social_link",
