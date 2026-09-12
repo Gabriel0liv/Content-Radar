@@ -55,6 +55,7 @@ jobs:
           src/test_case_radar_web_search.py
           src/test_case_radar_youtube.py
           src/test_case_radar_reddit.py
+          src/test_case_radar_reddit_oauth.py
           src/test_case_radar_x.py
           src/test_case_radar_social_platforms.py
           src/test_case_radar_social_context.py
