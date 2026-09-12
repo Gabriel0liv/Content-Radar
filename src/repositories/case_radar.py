@@ -24,6 +24,8 @@ class CaseResearchOwnershipError(RuntimeError):
 
 
 class CaseRadarRepository:
+    CASE_SEED_QUERY_INTENTS = frozenset({"core", "local_language"})
+
     def __init__(self, db: Session) -> None:
         self.db = db
 
@@ -255,6 +257,21 @@ class CaseRadarRepository:
         self.db.refresh(query)
         return query
 
+    def _preferred_query_id(self, source: ResearchSource, incoming_query_id: int | None) -> int | None:
+        current_query_id = getattr(source, "query_id", None)
+        if current_query_id is None:
+            return incoming_query_id
+        if incoming_query_id is None or incoming_query_id == current_query_id:
+            return current_query_id
+
+        current_query = self.db.get(CaseResearchQuery, current_query_id)
+        incoming_query = self.db.get(CaseResearchQuery, incoming_query_id)
+        current_is_seed = getattr(current_query, "intent", None) in self.CASE_SEED_QUERY_INTENTS
+        incoming_is_seed = getattr(incoming_query, "intent", None) in self.CASE_SEED_QUERY_INTENTS
+        if incoming_is_seed and not current_is_seed:
+            return incoming_query_id
+        return current_query_id
+
     def upsert_source(self, candidate: Candidate, run_id: int, query_id: int | None) -> ResearchSource:
         stmt = select(ResearchSource).where(ResearchSource.run_id == run_id)
         if candidate.external_id:
@@ -265,9 +282,10 @@ class CaseRadarRepository:
         else:
             stmt = stmt.where(ResearchSource.canonical_url == candidate.canonical_url)
         source = self.db.execute(stmt).scalar_one_or_none()
+        preferred_query_id = query_id if source is None else self._preferred_query_id(source, query_id)
 
         values = {
-            "query_id": query_id,
+            "query_id": preferred_query_id,
             "platform": candidate.platform,
             "external_id": candidate.external_id,
             "canonical_url": candidate.canonical_url,
