@@ -17,6 +17,10 @@ SUGGEST_THRESHOLD = 0.55
 DISTINCTIVE_TITLE_MIN_WORDS = 6
 DISTINCTIVE_TITLE_MIN_CHARS = 32
 DISTINCTIVE_TITLE_SIMILARITY = 0.96
+INDEX_PLATFORM_SUFFIX_RE = re.compile(
+    r"\s*(?:[-–—|·:]\s*)?(?:youtube|youtube shorts|tiktok|instagram|instagram reels?|reddit|x|twitter)\s*$",
+    re.IGNORECASE,
+)
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,16 @@ def _normalize_text(value: str | None) -> str:
 
 def _compact_text(value: str | None) -> str:
     return re.sub(r"[^\wÀ-ÿ]+", "", (value or "").casefold())
+
+
+def _normalize_indexed_title(value: str | None) -> str:
+    title = " ".join((value or "").split())
+    if not title:
+        return ""
+    stripped = INDEX_PLATFORM_SUFFIX_RE.sub("", title).strip()
+    # A platform-only or very short title is not useful for identity matching. In
+    # that case retain the original instead of manufacturing an empty/generic key.
+    return stripped if stripped and len(stripped) >= 12 else title
 
 
 def _text_similarity(a: str, b: str) -> float:
@@ -149,11 +163,13 @@ def compare_sources(
     if a.canonical_url and b.canonical_url and a.canonical_url == b.canonical_url:
         return ClusterDecision(1.0, ("same_canonical_url",), "merge")
 
-    if _is_distinctive_title(a.title) and _is_distinctive_title(b.title):
-        title_similarity = _text_similarity(a.title, b.title)
+    a_title = _normalize_indexed_title(a.title)
+    b_title = _normalize_indexed_title(b.title)
+    if _is_distinctive_title(a_title) and _is_distinctive_title(b_title):
+        title_similarity = _text_similarity(a_title, b_title)
         if title_similarity >= DISTINCTIVE_TITLE_SIMILARITY:
             return ClusterDecision(0.9, ("same_distinctive_title",), "merge")
-    if _has_contained_distinctive_title(a.title, b.title):
+    if _has_contained_distinctive_title(a_title, b_title):
         return ClusterDecision(0.88, ("contained_distinctive_title",), "merge")
 
     score = 0.0
