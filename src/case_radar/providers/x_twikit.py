@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import inspect
 from pathlib import Path
 from typing import Any
 
@@ -36,7 +37,8 @@ class TwikitSessionClient:
         return self._ensure_client().get_tweet_by_id(tweet_id)
 
     async def get_tweet_replies(self, tweet_id: str):
-        tweet = await self._ensure_client().get_tweet_by_id(tweet_id)
+        value = self._ensure_client().get_tweet_by_id(tweet_id)
+        tweet = await value if inspect.isawaitable(value) else value
         replies = getattr(tweet, "replies", None)
         return list(replies or [])
 
