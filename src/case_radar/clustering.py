@@ -14,6 +14,9 @@ from src.case_radar.url_normalization import canonicalize_url
 
 MERGE_THRESHOLD = 0.82
 SUGGEST_THRESHOLD = 0.55
+DISTINCTIVE_TITLE_MIN_WORDS = 6
+DISTINCTIVE_TITLE_MIN_CHARS = 32
+DISTINCTIVE_TITLE_SIMILARITY = 0.96
 
 
 @dataclass(frozen=True)
@@ -22,6 +25,7 @@ class ClusterFeatures:
     external_id: str | None = None
     canonical_url: str | None = None
     linked_urls: tuple[str, ...] = ()
+    title: str = ""
     text: str = ""
     alleged_date: str | None = None
     alleged_location: str | None = None
@@ -59,6 +63,13 @@ def _text_similarity(a: str, b: str) -> float:
     return max(jaccard, sequence)
 
 
+def _is_distinctive_title(value: str) -> bool:
+    normalized = _normalize_text(value)
+    if len(normalized) < DISTINCTIVE_TITLE_MIN_CHARS:
+        return False
+    return len(normalized.split()) >= DISTINCTIVE_TITLE_MIN_WORDS
+
+
 def features_from_source(
     source: Any,
     *,
@@ -71,10 +82,11 @@ def features_from_source(
         value = relation.get(key) if isinstance(relation, dict) else None
         if value:
             linked.append(canonicalize_url(str(value)))
+    title = _value(source, "title_or_caption", None) or ""
     text = " ".join(
         part
         for part in (
-            _value(source, "title_or_caption", None),
+            title,
             _value(source, "text", None),
         )
         if part
@@ -87,6 +99,7 @@ def features_from_source(
         external_id=_value(source, "external_id", None),
         canonical_url=canonicalize_url(_value(source, "canonical_url", "")) if _value(source, "canonical_url", None) else None,
         linked_urls=tuple(dict.fromkeys(linked)),
+        title=title,
         text=text,
         alleged_date=_value(source, "alleged_date", None),
         alleged_location=_value(source, "alleged_location", None),
@@ -110,6 +123,11 @@ def compare_sources(
         return ClusterDecision(1.0, ("same_platform_external_id",), "merge")
     if a.canonical_url and b.canonical_url and a.canonical_url == b.canonical_url:
         return ClusterDecision(1.0, ("same_canonical_url",), "merge")
+
+    if _is_distinctive_title(a.title) and _is_distinctive_title(b.title):
+        title_similarity = _text_similarity(a.title, b.title)
+        if title_similarity >= DISTINCTIVE_TITLE_SIMILARITY:
+            return ClusterDecision(0.9, ("same_distinctive_title",), "merge")
 
     score = 0.0
     linked_overlap = set(a.linked_urls) & set(b.linked_urls)
