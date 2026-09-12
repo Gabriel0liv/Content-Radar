@@ -77,6 +77,15 @@ class CaseRadarOrchestrator:
         intent = getattr(query, "intent", None)
         return intent in cls.CASE_SEED_INTENTS
 
+    @classmethod
+    def _group_priority(cls, group: list[ResearchSource]) -> tuple[int, int, float, int, int]:
+        source_count = len(group)
+        platforms = len({getattr(source, "platform", None) for source in group if getattr(source, "platform", None)})
+        confidence = max((float(getattr(source, "source_confidence", 0.0) or 0.0) for source in group), default=0.0)
+        seed_count = sum(1 for source in group if cls._can_seed_case(source))
+        first_id = min((int(getattr(source, "id", 0) or 0) for source in group), default=0)
+        return (source_count, platforms, confidence, seed_count, -first_id)
+
     @staticmethod
     def _candidate_from_source(source: ResearchSource) -> Candidate:
         return Candidate(
@@ -251,7 +260,13 @@ class CaseRadarOrchestrator:
         ).all()
         return {int(link.source_id): case for link, case in rows}
 
-    def _cluster(self, run_id: int, sources: list[ResearchSource]) -> list[ResearchCase]:
+    def _cluster(
+        self,
+        run_id: int,
+        sources: list[ResearchSource],
+        *,
+        max_cases: int | None = None,
+    ) -> list[ResearchCase]:
         parent = {source.id: source.id for source in sources}
 
         def find(value: int) -> int:
@@ -276,13 +291,27 @@ class CaseRadarOrchestrator:
             groups.setdefault(find(source.id), []).append(source)
 
         existing_by_source = self._existing_case_by_source(run_id)
-        cases: list[ResearchCase] = []
+        existing_groups: list[tuple[ResearchCase, list[ResearchSource], list[ResearchSource]]] = []
+        new_groups: list[tuple[None, list[ResearchSource], list[ResearchSource]]] = []
+
         for group in groups.values():
             existing = [existing_by_source[source.id] for source in group if source.id in existing_by_source]
             case = min(existing, key=lambda item: item.id) if existing else None
             seed_sources = [source for source in group if self._can_seed_case(source)]
-            if case is None and not seed_sources:
-                continue
+            if case is not None:
+                existing_groups.append((case, group, seed_sources))
+            elif seed_sources:
+                new_groups.append((None, group, seed_sources))
+
+        new_groups.sort(key=lambda item: self._group_priority(item[1]), reverse=True)
+        if max_cases is not None:
+            remaining = max(0, int(max_cases) - len(existing_groups))
+            new_groups = new_groups[:remaining]
+
+        cases: list[ResearchCase] = []
+        selected_groups = [*existing_groups, *new_groups]
+        for existing_case, group, seed_sources in selected_groups:
+            case = existing_case
             if case is None:
                 primary = min(
                     seed_sources,
@@ -462,7 +491,7 @@ class CaseRadarOrchestrator:
 
         self._check_cancel(cancelled)
         self._progress(progress, "clustering_cases", 65, "Agrupando reposts e casos")
-        cases = self._cluster(run.id, sources)
+        cases = self._cluster(run.id, sources, max_cases=request.desired_usable_cases)
         run.clustered_cases = len(cases)
         self.db.add(run)
         self.db.commit()
