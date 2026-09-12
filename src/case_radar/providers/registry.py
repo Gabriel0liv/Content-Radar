@@ -1,0 +1,115 @@
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Any
+
+from src.case_radar.providers.base import (
+    CaseRadarProvider,
+    ProviderAuthExpired,
+    ProviderBudget,
+    ProviderError,
+    ProviderPermanentError,
+    ProviderRateLimited,
+    ProviderUnavailable,
+)
+from src.case_radar.types import CandidatePage, Platform
+
+
+@dataclass
+class ProviderSearchOutcome:
+    page: CandidatePage | None
+    provider_name: str | None
+    errors: list[dict[str, str | None]] = field(default_factory=list)
+
+
+class ProviderRegistry:
+    def __init__(self, priorities: dict[Platform, list[str]] | None = None) -> None:
+        self._providers: dict[tuple[Platform, str], CaseRadarProvider] = {}
+        self._priorities = priorities or {}
+
+    def register(self, provider: CaseRadarProvider) -> None:
+        self._providers[(provider.platform, provider.method)] = provider
+
+    def get(self, platform: Platform, method: str) -> CaseRadarProvider | None:
+        return self._providers.get((platform, method))
+
+    def methods_for(self, platform: Platform) -> list[str]:
+        if platform in self._priorities:
+            return list(self._priorities[platform])
+        return [method for provider_platform, method in self._providers if provider_platform == platform]
+
+    def available_providers(self, platform: Platform) -> list[CaseRadarProvider]:
+        providers: list[CaseRadarProvider] = []
+        for method in self.methods_for(platform):
+            provider = self.get(platform, method)
+            if provider is None:
+                continue
+            if not provider.capabilities.search_supported:
+                continue
+            try:
+                available = provider.is_available()
+            except Exception:
+                available = False
+            if available:
+                providers.append(provider)
+        return providers
+
+    def search_with_fallback(
+        self,
+        platform: Platform,
+        request: Any,
+        query: Any,
+        budget: ProviderBudget,
+        cursor: str | None = None,
+    ) -> ProviderSearchOutcome:
+        errors: list[dict[str, str | None]] = []
+        attempted = False
+
+        for method in self.methods_for(platform):
+            provider = self.get(platform, method)
+            if provider is None or not provider.capabilities.search_supported:
+                continue
+            attempted = True
+
+            if budget.exhausted:
+                errors.append(
+                    ProviderUnavailable(
+                        "Budget do provider esgotado",
+                        provider=provider.name,
+                    ).as_dict()
+                )
+                break
+
+            try:
+                if not provider.is_available():
+                    raise ProviderUnavailable("Provider indisponível", provider=provider.name)
+                budget.consume(requests=1)
+                page = provider.search(request, query, cursor=cursor)
+                if not budget.can_consume(results=len(page.candidates)):
+                    remaining = max(0, budget.result_limit - budget.results_used)
+                    page = CandidatePage(
+                        candidates=page.candidates[:remaining],
+                        next_cursor=None,
+                        raw_json={**page.raw_json, "truncated_by_budget": True},
+                    )
+                budget.consume(results=len(page.candidates))
+                return ProviderSearchOutcome(page=page, provider_name=provider.name, errors=errors)
+            except (ProviderUnavailable, ProviderAuthExpired, ProviderRateLimited) as exc:
+                if exc.provider is None:
+                    exc.provider = provider.name
+                errors.append(exc.as_dict())
+                continue
+            except ProviderPermanentError as exc:
+                if exc.provider is None:
+                    exc.provider = provider.name
+                errors.append(exc.as_dict())
+                continue
+            except ProviderError as exc:
+                if exc.provider is None:
+                    exc.provider = provider.name
+                errors.append(exc.as_dict())
+                continue
+
+        if not attempted:
+            errors.append(ProviderUnavailable(f"Nenhum provider registrado para {platform}").as_dict())
+        return ProviderSearchOutcome(page=None, provider_name=None, errors=errors)
