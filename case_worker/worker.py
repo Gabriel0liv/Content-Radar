@@ -67,7 +67,12 @@ def run_once(
     except Exception as exc:
         current = repo.get_run(run.id)
         if current is not None and current.status == "running" and current.worker_id == worker_id:
-            repo.fail(run.id, worker_id, "case_worker_error", str(exc))
+            repo.fail(
+                run.id,
+                worker_id,
+                "case_worker_error",
+                f"Falha interna no Case Radar ({type(exc).__name__}). Consulte os logs locais do worker.",
+            )
     return True
 
 
