@@ -21,9 +21,20 @@ class FakeRepo:
     def __init__(self):
         self.db = FakeDb()
         self.sources = []
+        self.claims = []
+        self.evidence = []
 
     def list_sources(self, run_id):
         return list(self.sources)
+
+    def upsert_claim(self, **payload):
+        claim = SimpleNamespace(id=len(self.claims) + 1, **payload)
+        self.claims.append(claim)
+        return claim
+
+    def link_evidence(self, **payload):
+        self.evidence.append(payload)
+        return SimpleNamespace(id=len(self.evidence), **payload)
 
 
 class FakeRegistry:
@@ -162,3 +173,71 @@ def test_query_persistence_is_delegated_before_discovery_on_retry():
     second = orchestrator.execute(run)
     assert first.summary["usable_cases"] == second.summary["usable_cases"]
     assert first_calls == orchestrator.calls
+
+
+def test_social_debunk_becomes_unverified_claim_with_social_evidence():
+    repo = FakeRepo()
+    orchestrator = CaseRadarOrchestrator(repo, FakeRegistry())
+    case = SimpleNamespace(id=7)
+    comment = SimpleNamespace(
+        id=12,
+        source_id=3,
+        body="Isso é de um curta-metragem, a cena original está aqui.",
+        categories_json=["debunk", "link"],
+        author_reply=False,
+        usefulness_score=8.0,
+    )
+
+    orchestrator._materialize_social_claims(case, [comment])
+
+    assert len(repo.claims) == 1
+    assert repo.claims[0].claim_type == "debunk"
+    assert repo.claims[0].status == "unverified"
+    assert repo.evidence == [
+        {
+            "claim_id": 1,
+            "stance": "supports",
+            "social_context_item_id": 12,
+            "source_id": 3,
+            "note": "Pista extraída de comentário/resposta; não tratada como fato sem corroboração independente.",
+        }
+    ]
+
+
+def test_author_response_is_source_claimed_but_not_corroborated():
+    repo = FakeRepo()
+    orchestrator = CaseRadarOrchestrator(repo, FakeRegistry())
+    case = SimpleNamespace(id=7)
+    comment = SimpleNamespace(
+        id=14,
+        source_id=3,
+        body="Eu gravei isso perto de Coimbra em 2021.",
+        categories_json=["author_response", "context"],
+        author_reply=True,
+        usefulness_score=12.0,
+    )
+
+    orchestrator._materialize_social_claims(case, [comment])
+
+    assert repo.claims[0].claim_type == "context"
+    assert repo.claims[0].status == "source_claimed"
+    assert repo.claims[0].confidence < 0.7
+
+
+def test_comment_link_to_existing_source_becomes_provenance_edge():
+    repo = FakeRepo()
+    orchestrator = CaseRadarOrchestrator(repo, FakeRegistry())
+    sources = [
+        SimpleNamespace(id=1, canonical_url="https://x.com/user/status/100"),
+        SimpleNamespace(id=2, canonical_url="https://reddit.com/r/test/comments/abc/post"),
+    ]
+    social = [
+        SimpleNamespace(
+            source_id=1,
+            urls_json=["https://www.reddit.com/r/test/comments/abc/post/?utm_source=share"],
+        )
+    ]
+
+    targets = orchestrator._social_link_targets(sources, social)
+
+    assert targets[1] == {2}
