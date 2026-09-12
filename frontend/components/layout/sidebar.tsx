@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Library, Lightbulb, Radar, Search } from "lucide-react";
+import { Library, Lightbulb, Radar, Search, Telescope } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const menuItems = [
   { name: "Radar", href: "/content", icon: Radar },
+  { name: "Case Radar", href: "/case-radar", icon: Telescope },
   { name: "Pesquisas", href: "/search-configs", icon: Search },
   { name: "Biblioteca", href: "/references", icon: Library },
   { name: "Ideias", href: "/ideas", icon: Lightbulb },
@@ -48,7 +49,7 @@ export function Sidebar() {
       </nav>
 
       <div className="border-t border-slate-800 bg-[#070b12] p-4 text-xs text-slate-500">
-        Encontrar → salvar → transcrever → anotar
+        Encontrar → pesquisar → verificar → guardar
       </div>
     </aside>
   );
