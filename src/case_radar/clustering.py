@@ -70,6 +70,19 @@ def _is_distinctive_title(value: str) -> bool:
     return len(normalized.split()) >= DISTINCTIVE_TITLE_MIN_WORDS
 
 
+def _has_contained_distinctive_title(a: str, b: str) -> bool:
+    a_norm = _normalize_text(a)
+    b_norm = _normalize_text(b)
+    if not a_norm or not b_norm or a_norm == b_norm:
+        return False
+    shorter, longer = (a_norm, b_norm) if len(a_norm) <= len(b_norm) else (b_norm, a_norm)
+    if not _is_distinctive_title(shorter):
+        return False
+    # Word-boundary padding avoids treating a distinctive title as a substring
+    # merely because it happens to occur inside a larger token.
+    return f" {shorter} " in f" {longer} "
+
+
 def features_from_source(
     source: Any,
     *,
@@ -128,6 +141,8 @@ def compare_sources(
         title_similarity = _text_similarity(a.title, b.title)
         if title_similarity >= DISTINCTIVE_TITLE_SIMILARITY:
             return ClusterDecision(0.9, ("same_distinctive_title",), "merge")
+    if _has_contained_distinctive_title(a.title, b.title):
+        return ClusterDecision(0.88, ("contained_distinctive_title",), "merge")
 
     score = 0.0
     linked_overlap = set(a.linked_urls) & set(b.linked_urls)
