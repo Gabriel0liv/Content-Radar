@@ -41,6 +41,8 @@ O Case Radar pode descobrir e cruzar material de:
 
 O desenho é **free-first**. X, TikTok e Instagram aceitam caminhos em camadas quando configurados: descoberta via web, sessão autenticada experimental e provider oficial quando houver credenciais/acesso apropriado. Nenhum provider pago é obrigatório para a aplicação subir.
 
+No Reddit, a ordem de fallback é: OAuth application-only quando `REDDIT_CLIENT_ID` e `REDDIT_CLIENT_SECRET` estiverem configurados, endpoint público direto quando disponível e, por fim, descoberta via web. A falta de credenciais ou o bloqueio de um caminho não deve derrubar a pesquisa inteira.
+
 A pesquisa tenta:
 
 - gerar consultas em PT/EN/ES;
@@ -83,6 +85,18 @@ REDDIT_CLIENT_SECRET=
 ```
 
 Sessões/cookies ficam em arquivos locais fora do Git. Tokens e conteúdo de sessão não devem ser enviados pela API nem salvos em `raw_json`.
+
+#### Smoke operacional
+
+Depois de aplicar as migrations, há dois smokes manuais úteis:
+
+```powershell
+$env:PYTHONPATH="."
+python scripts/case_radar_provider_smoke.py --query "unexplained footage original source"
+python scripts/case_radar_run_smoke.py --theme "unexplained footage original source" --desired-cases 3
+```
+
+O primeiro registra quais providers estão disponíveis e suas capabilities sem imprimir credenciais. O segundo cria uma pesquisa real pequena, executa uma iteração do worker e valida que uma run `completed`/`partially_completed` produziu ao menos um dossiê com URLs de fontes HTTP(S) válidas. Providers opcionais sem configuração aparecem como indisponíveis/skipped; isso não é, por si só, falha da aplicação.
 
 #### Limites conhecidos
 
@@ -182,7 +196,7 @@ Frontend: `http://localhost:3000`
 Case Radar:
 
 ```powershell
-python -m pytest -q src/test_case_radar_models.py src/test_case_radar_repository.py src/test_case_radar_api.py src/test_case_radar_query_generator.py src/test_case_radar_providers.py src/test_case_radar_web_search.py src/test_case_radar_youtube.py src/test_case_radar_reddit.py src/test_case_radar_social_context.py src/test_case_radar_clustering.py src/test_case_radar_provenance.py src/test_case_radar_dossier.py src/test_case_radar_reference_service.py src/test_case_radar_orchestrator.py src/test_case_worker_bootstrap.py
+python -m pytest -q src/test_case_radar_models.py src/test_case_radar_repository.py src/test_case_radar_api.py src/test_case_radar_query_generator.py src/test_case_radar_providers.py src/test_case_radar_web_search.py src/test_case_radar_youtube.py src/test_case_radar_reddit.py src/test_case_radar_reddit_oauth.py src/test_case_radar_x.py src/test_case_radar_social_platforms.py src/test_case_radar_social_context.py src/test_case_radar_clustering.py src/test_case_radar_provenance.py src/test_case_radar_dossier.py src/test_case_radar_reference_service.py src/test_case_radar_orchestrator.py src/test_case_radar_social_source_promotion.py src/test_case_worker_bootstrap.py src/test_case_worker_protocol.py
 ```
 
 Regressão Speech compartilhada:
