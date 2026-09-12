@@ -32,7 +32,6 @@ from src.schemas.video_workshop import (
     VideoProjectReferenceCreate,
     VideoProjectUpdate,
 )
-from src.schemas.canva_oauth import CanvaOAuthStatusRead
 from src.services.canva_oauth_service import CanvaOAuthService
 from src.services.external_boards_service import ExternalBoardsService
 from src.services.video_workshop_service import (
@@ -511,8 +510,8 @@ def test_canva_oauth_valid_access_token_fallback_and_auto_refresh():
     print("✓ test_canva_oauth_valid_access_token_fallback_and_auto_refresh passed")
 
 
-def test_canva_oauth_status_route_and_external_board_token_usage():
-    print("\nRunning test_canva_oauth_status_route_and_external_board_token_usage...")
+def test_canva_oauth_route_is_inactive_but_external_board_service_still_uses_token():
+    print("\nRunning test_canva_oauth_route_is_inactive_but_external_board_service_still_uses_token...")
     db = SessionLocal()
     reset_canva_oauth_tables(db)
 
@@ -530,11 +529,7 @@ def test_canva_oauth_status_route_and_external_board_token_usage():
 
     client = TestClient(app)
     response = client.get("/canva/oauth/status")
-    assert response.status_code == 200, response.text
-    payload = response.json()
-    parsed = CanvaOAuthStatusRead(**payload)
-    assert parsed.connected is True
-    assert "access_token" not in payload and "refresh_token" not in payload
+    assert response.status_code == 404, response.text
 
     db = SessionLocal()
     project = VideoWorkshopService(db).create_video_project(
@@ -570,37 +565,15 @@ def test_canva_oauth_status_route_and_external_board_token_usage():
     reset_canva_oauth_tables(db)
     db.commit()
     db.close()
-    print("✓ test_canva_oauth_status_route_and_external_board_token_usage passed")
+    print("✓ test_canva_oauth_route_is_inactive_but_external_board_service_still_uses_token passed")
 
 
-def test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow():
-    print("\nRunning test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow...")
-    db = SessionLocal()
-    reset_canva_oauth_tables(db)
-    external_id = f"redirect-{int(time.time() * 1000)}"
-    project = VideoWorkshopService(db).create_video_project(
-        VideoProjectCreate(title="Open Canva Redirect", status="idea", priority=0)
-    )
-    board = create_mock_canva_board(ExternalBoardsService(db), project.id, external_id=external_id)
-    board_id = board.id
-    db.close()
-
+def test_open_canva_route_is_not_exposed_in_active_api():
+    print("\nRunning test_open_canva_route_is_not_exposed_in_active_api...")
     client = TestClient(app)
-
-    with patch(
-        "src.api.routes.external_boards.ExternalBoardsService.get_canva_open_url",
-        return_value=f"https://www.canva.com/design/{external_id}/edit?token=fresh",
-    ):
-        response = client.get(f"/external-boards/{board_id}/open-canva", follow_redirects=False)
-
-    assert response.status_code == 307, response.text
-    assert response.headers["location"].startswith(f"https://www.canva.com/design/{external_id}/edit")
-
-    cleanup_db = SessionLocal()
-    cleanup_db.query(VideoProject).filter(VideoProject.id == project.id).delete()
-    cleanup_db.commit()
-    cleanup_db.close()
-    print("✓ test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow passed")
+    response = client.get("/external-boards/123/open-canva", follow_redirects=False)
+    assert response.status_code == 404, response.text
+    print("✓ test_open_canva_route_is_not_exposed_in_active_api passed")
 
 
 if __name__ == "__main__":
@@ -612,8 +585,8 @@ if __name__ == "__main__":
         test_canva_oauth_generate_pkce_pair()
         test_canva_oauth_start_authorization_and_callback_and_refresh()
         test_canva_oauth_valid_access_token_fallback_and_auto_refresh()
-        test_canva_oauth_status_route_and_external_board_token_usage()
-        test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow()
+        test_canva_oauth_route_is_inactive_but_external_board_service_still_uses_token()
+        test_open_canva_route_is_not_exposed_in_active_api()
         print("\nAll video workshop tests passed successfully!")
     except AssertionError as e:
         print(f"\nAssertion error: {e}")
