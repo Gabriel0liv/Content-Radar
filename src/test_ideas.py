@@ -5,7 +5,7 @@ from src.schemas.ideas import ACTIVE_IDEA_STATUSES, IdeaCreate, IdeaRead, IdeaUp
 
 
 def test_active_api_exposes_ideas_but_not_workshop_children():
-    paths = {route.path for route in app.routes}
+    paths = {path for route in app.routes if (path := getattr(route, "path", None)) is not None}
     assert "/video-projects" in paths
     assert "/video-projects/{id}" in paths
     assert "/video-projects/{id}/items" not in paths
