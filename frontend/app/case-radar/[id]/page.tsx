@@ -8,7 +8,7 @@ import { ArrowLeft, Ban, RefreshCw } from "lucide-react";
 import { CaseDossier } from "@/components/case-radar/case-dossier";
 import { CaseList } from "@/components/case-radar/case-list";
 import { RunStatus } from "@/components/case-radar/run-status";
-import { cancelCaseResearchRun, getCaseResearchRun, getResearchCase, getResearchCases } from "@/lib/api";
+import { cancelCaseResearchRun, getCaseResearchRun, getResearchCases } from "@/lib/api";
 import type { CaseResearchRun, ResearchCase } from "@/lib/types";
 
 export default function CaseRadarRunPage() {
@@ -28,19 +28,17 @@ export default function CaseRadarRunPage() {
       const [nextRun, nextCases] = await Promise.all([getCaseResearchRun(runId), getResearchCases(runId)]);
       setRun(nextRun);
       setCases(nextCases);
-      if (requestedCaseId) {
-        const existing = nextCases.find((item) => item.id === requestedCaseId);
-        setSelectedCase(existing || (await getResearchCase(requestedCaseId)));
-      } else if (selectedCase) {
-        setSelectedCase(nextCases.find((item) => item.id === selectedCase.id) || null);
-      }
+      setSelectedCase((current) => {
+        const targetId = requestedCaseId || current?.id;
+        return targetId ? nextCases.find((item) => item.id === targetId) || null : null;
+      });
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Falha ao carregar pesquisa.");
     } finally {
       setLoading(false);
     }
-  }, [runId, requestedCaseId, selectedCase?.id]);
+  }, [runId, requestedCaseId]);
 
   useEffect(() => {
     refresh();
