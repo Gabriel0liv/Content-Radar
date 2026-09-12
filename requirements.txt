@@ -23,5 +23,8 @@ python-multipart
 yt-dlp
 httpx
 
+# Case Radar authenticated Instagram sessions
+instagrapi
+
 # Existing lightweight audio transcription path
 faster-whisper
