@@ -23,9 +23,44 @@ class FakeRepo:
         self.sources = []
         self.claims = []
         self.evidence = []
+        self.case_links = []
 
     def list_sources(self, run_id):
         return list(self.sources)
+
+    def upsert_source(self, candidate, run_id, query_id):
+        for source in self.sources:
+            if source.canonical_url == candidate.canonical_url:
+                return source
+        source = SimpleNamespace(
+            id=len(self.sources) + 1,
+            run_id=run_id,
+            query_id=query_id,
+            platform=candidate.platform,
+            canonical_url=candidate.canonical_url,
+            external_id=candidate.external_id,
+            discovery_method=candidate.discovery_method,
+            source_confidence=candidate.source_confidence,
+            title_or_caption=candidate.title_or_caption,
+            text=candidate.text,
+            published_at=candidate.published_at,
+            author_handle=candidate.author_handle,
+            author_display_name=candidate.author_display_name,
+            media_type=candidate.media_type,
+            thumbnail_url=candidate.thumbnail_url,
+            duration_seconds=candidate.duration_seconds,
+            language=candidate.language,
+            engagement_json=candidate.engagement,
+            hashtags_json=candidate.hashtags,
+            relation_json=candidate.relation,
+            raw_json=candidate.raw_json,
+        )
+        self.sources.append(source)
+        return source
+
+    def link_case_source(self, **payload):
+        self.case_links.append(payload)
+        return SimpleNamespace(id=len(self.case_links), **payload)
 
     def upsert_claim(self, **payload):
         claim = SimpleNamespace(id=len(self.claims) + 1, **payload)
@@ -38,7 +73,11 @@ class FakeRepo:
 
 
 class FakeRegistry:
-    pass
+    def methods_for(self, platform):
+        return []
+
+    def get(self, platform, method):
+        return None
 
 
 class RecordingOrchestrator(CaseRadarOrchestrator):
@@ -241,3 +280,43 @@ def test_comment_link_to_existing_source_becomes_provenance_edge():
     targets = orchestrator._social_link_targets(sources, social)
 
     assert targets[1] == {2}
+
+
+def test_comment_link_to_new_url_becomes_auxiliary_source_of_same_case():
+    repo = FakeRepo()
+    origin = SimpleNamespace(
+        id=1,
+        run_id=9,
+        query_id=4,
+        platform="reddit",
+        canonical_url="https://reddit.com/r/test/comments/abc/post",
+    )
+    repo.sources = [origin]
+    orchestrator = CaseRadarOrchestrator(repo, FakeRegistry())
+    case = SimpleNamespace(id=22, run_id=9)
+    social = [
+        SimpleNamespace(
+            id=31,
+            source_id=1,
+            urls_json=["https://x.com/original/status/123?utm_source=share"],
+            categories_json=["origin", "link"],
+            body="Original source: https://x.com/original/status/123",
+        )
+    ]
+
+    promoted = orchestrator._promote_social_links(case, repo.sources, social)
+
+    assert len(promoted) == 1
+    assert promoted[0].platform == "x"
+    assert promoted[0].canonical_url == "https://x.com/original/status/123"
+    assert promoted[0].discovery_method == "social_link"
+    assert repo.case_links == [
+        {
+            "case_id": 22,
+            "source_id": promoted[0].id,
+            "role": "original_candidate",
+            "provenance_confidence": 0.45,
+            "reason": "URL citada em comentário/resposta classificada como pista de origem.",
+            "evidence_json": {"social_context_item_id": 31, "source_id": 1},
+        }
+    ]
