@@ -3,6 +3,7 @@ from types import SimpleNamespace
 
 from sqlalchemy.dialects import postgresql
 
+from src.case_radar.types import Candidate
 from src.models.case_radar import CaseResearchRun
 from src.repositories.case_radar import CaseRadarRepository
 
@@ -51,6 +52,18 @@ class FakeDb:
 
     def get(self, model, key):
         return None
+
+
+def _candidate(url: str = "https://example.com/case") -> Candidate:
+    return Candidate(
+        platform="web",
+        canonical_url=url,
+        title_or_caption="Strange lights recorded above the forest",
+        text="Witness footage of unusual lights.",
+        discovery_query="strange lights",
+        discovery_method="web_search",
+        source_confidence=0.5,
+    )
 
 
 def test_claim_next_uses_skip_locked_and_assigns_lease():
@@ -194,3 +207,43 @@ def test_recover_stale_lease_finishes_cancelled_run():
     assert run.status == "cancelled"
     assert run.stage == "cancelled"
     assert run.finished_at == now
+
+
+def test_upsert_source_keeps_existing_seed_query_when_rediscovered_by_context():
+    source = SimpleNamespace(
+        query_id=10,
+        platform="web",
+        external_id=None,
+        canonical_url="https://example.com/case",
+    )
+    queries = {
+        10: SimpleNamespace(id=10, intent="core"),
+        20: SimpleNamespace(id=20, intent="context"),
+    }
+    db = FakeDb(ScalarOneOrNoneResult(source))
+    db.get = lambda model, key: queries.get(key)
+    repo = CaseRadarRepository(db)
+
+    result = repo.upsert_source(_candidate(), run_id=1, query_id=20)
+
+    assert result.query_id == 10
+
+
+def test_upsert_source_promotes_auxiliary_query_to_seed_query_when_rediscovered_by_core():
+    source = SimpleNamespace(
+        query_id=20,
+        platform="web",
+        external_id=None,
+        canonical_url="https://example.com/case",
+    )
+    queries = {
+        10: SimpleNamespace(id=10, intent="core"),
+        20: SimpleNamespace(id=20, intent="context"),
+    }
+    db = FakeDb(ScalarOneOrNoneResult(source))
+    db.get = lambda model, key: queries.get(key)
+    repo = CaseRadarRepository(db)
+
+    result = repo.upsert_source(_candidate(), run_id=1, query_id=10)
+
+    assert result.query_id == 10
