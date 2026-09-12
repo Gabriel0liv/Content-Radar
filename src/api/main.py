@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from src.api.routes import content_items, discovery_terms, global_search, health, ideas, ingest, references, search, speech, speech_jobs
+from src.api.routes import case_radar, content_items, discovery_terms, global_search, health, ideas, ingest, references, search, speech, speech_jobs
 
 app = FastAPI(
     title="Content Radar API",
@@ -33,3 +33,4 @@ app.include_router(references.transcripts_router, prefix="/transcripts", tags=["
 app.include_router(ideas.router, tags=["Ideas"])
 app.include_router(speech.router, prefix="/speech", tags=["Speech"])
 app.include_router(speech_jobs.router, prefix="/speech", tags=["Speech Jobs"])
+app.include_router(case_radar.router, prefix="/case-radar", tags=["Case Radar"])
