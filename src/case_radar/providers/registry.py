@@ -54,6 +54,74 @@ class ProviderRegistry:
                 providers.append(provider)
         return providers
 
+    @staticmethod
+    def _record_error(errors: list[dict[str, str | None]], provider: CaseRadarProvider, exc: ProviderError) -> None:
+        if exc.provider is None:
+            exc.provider = provider.name
+        errors.append(exc.as_dict())
+
+    def _search_provider_pages(
+        self,
+        provider: CaseRadarProvider,
+        request: Any,
+        query: Any,
+        budget: ProviderBudget,
+        cursor: str | None,
+        errors: list[dict[str, str | None]],
+    ) -> CandidatePage:
+        candidates = []
+        current_cursor = cursor
+        seen_cursors: set[str] = set()
+        page_metadata: list[dict[str, Any]] = []
+        truncated = False
+
+        while not budget.exhausted:
+            if not budget.can_consume(requests=1):
+                break
+            budget.consume(requests=1)
+            try:
+                page = provider.search(request, query, cursor=current_cursor)
+            except (ProviderUnavailable, ProviderAuthExpired, ProviderRateLimited, ProviderPermanentError, ProviderError) as exc:
+                if candidates:
+                    self._record_error(errors, provider, exc)
+                    break
+                raise
+
+            remaining = max(0, budget.result_limit - budget.results_used)
+            accepted = page.candidates[:remaining]
+            candidates.extend(accepted)
+            budget.consume(results=len(accepted))
+            page_metadata.append(dict(page.raw_json or {}))
+            if len(accepted) < len(page.candidates):
+                truncated = True
+                current_cursor = None
+                break
+
+            next_cursor = page.next_cursor
+            if not next_cursor or budget.exhausted:
+                current_cursor = next_cursor
+                break
+            if next_cursor in seen_cursors or next_cursor == current_cursor:
+                errors.append(
+                    ProviderPermanentError(
+                        "Provider retornou cursor repetido; paginação interrompida",
+                        provider=provider.name,
+                    ).as_dict()
+                )
+                current_cursor = None
+                break
+            seen_cursors.add(next_cursor)
+            current_cursor = next_cursor
+
+        raw_json: dict[str, Any] = {
+            "result_count": len(candidates),
+            "pages_fetched": len(page_metadata),
+            "pages": page_metadata,
+        }
+        if truncated or budget.exhausted:
+            raw_json["truncated_by_budget"] = True
+        return CandidatePage(candidates=candidates, next_cursor=current_cursor, raw_json=raw_json)
+
     def search_with_fallback(
         self,
         platform: Platform,
@@ -83,31 +151,16 @@ class ProviderRegistry:
             try:
                 if not provider.is_available():
                     raise ProviderUnavailable("Provider indisponível", provider=provider.name)
-                budget.consume(requests=1)
-                page = provider.search(request, query, cursor=cursor)
-                if not budget.can_consume(results=len(page.candidates)):
-                    remaining = max(0, budget.result_limit - budget.results_used)
-                    page = CandidatePage(
-                        candidates=page.candidates[:remaining],
-                        next_cursor=None,
-                        raw_json={**page.raw_json, "truncated_by_budget": True},
-                    )
-                budget.consume(results=len(page.candidates))
+                page = self._search_provider_pages(provider, request, query, budget, cursor, errors)
                 return ProviderSearchOutcome(page=page, provider_name=provider.name, errors=errors)
             except (ProviderUnavailable, ProviderAuthExpired, ProviderRateLimited) as exc:
-                if exc.provider is None:
-                    exc.provider = provider.name
-                errors.append(exc.as_dict())
+                self._record_error(errors, provider, exc)
                 continue
             except ProviderPermanentError as exc:
-                if exc.provider is None:
-                    exc.provider = provider.name
-                errors.append(exc.as_dict())
+                self._record_error(errors, provider, exc)
                 continue
             except ProviderError as exc:
-                if exc.provider is None:
-                    exc.provider = provider.name
-                errors.append(exc.as_dict())
+                self._record_error(errors, provider, exc)
                 continue
 
         if not attempted:
@@ -122,11 +175,8 @@ def build_default_registry() -> ProviderRegistry:
         InstagramWebSearchProvider,
     )
     from src.case_radar.providers.reddit import RedditCaseRadarProvider
-    from src.case_radar.providers.tiktok import (
-        TikTokLoggedInProvider,
-        TikTokOfficialProvider,
-        TikTokWebSearchProvider,
-    )
+    from src.case_radar.providers.tiktok import TikTokLoggedInProvider, TikTokWebSearchProvider
+    from src.case_radar.providers.tiktok_research import TikTokResearchProvider
     from src.case_radar.providers.web_search import WebSearchProvider
     from src.case_radar.providers.x import XOfficialApiProvider, XWebSearchProvider
     from src.case_radar.providers.x_twikit import TwikitXLoggedInProvider
@@ -149,7 +199,7 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(XOfficialApiProvider())
     registry.register(TikTokLoggedInProvider())
     registry.register(TikTokWebSearchProvider())
-    registry.register(TikTokOfficialProvider())
+    registry.register(TikTokResearchProvider())
     registry.register(InstagramLoggedInProvider())
     registry.register(InstagramWebSearchProvider())
     registry.register(InstagramOfficialProvider())
