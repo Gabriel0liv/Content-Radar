@@ -175,6 +175,24 @@ def test_query_persistence_is_delegated_before_discovery_on_retry():
     assert first_calls == orchestrator.calls
 
 
+def test_only_discovery_intents_can_seed_cases():
+    orchestrator = CaseRadarOrchestrator(FakeRepo(), FakeRegistry())
+
+    core = SimpleNamespace(query=SimpleNamespace(intent="core"))
+    local = SimpleNamespace(query=SimpleNamespace(intent="local_language"))
+    source_hunt = SimpleNamespace(query=SimpleNamespace(intent="source_hunt"))
+    context = SimpleNamespace(query=SimpleNamespace(intent="context"))
+    debunk = SimpleNamespace(query=SimpleNamespace(intent="debunk"))
+    promoted = SimpleNamespace(query=None)
+
+    assert orchestrator._can_seed_case(core) is True
+    assert orchestrator._can_seed_case(local) is True
+    assert orchestrator._can_seed_case(source_hunt) is False
+    assert orchestrator._can_seed_case(context) is False
+    assert orchestrator._can_seed_case(debunk) is False
+    assert orchestrator._can_seed_case(promoted) is False
+
+
 def test_social_debunk_becomes_unverified_claim_with_social_evidence():
     repo = FakeRepo()
     orchestrator = CaseRadarOrchestrator(repo, FakeRegistry())
