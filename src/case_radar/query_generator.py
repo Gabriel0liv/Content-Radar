@@ -70,7 +70,7 @@ def _patterns_for_language(language: str) -> dict[str, tuple[str, ...]]:
 def generate_queries(request: CaseResearchCreate) -> list[GeneratedQuery]:
     include_suffix = " ".join(request.include_terms).strip()
     result: list[GeneratedQuery] = []
-    seen: set[tuple[str, str, str]] = set()
+    seen_text: set[str] = set()
     variants_per_intent = _DEPTH_VARIANTS[request.research_depth]
     intents = _DEPTH_INTENTS[request.research_depth]
     include_applied = False
@@ -78,16 +78,23 @@ def generate_queries(request: CaseResearchCreate) -> list[GeneratedQuery]:
     for language in request.languages:
         patterns = _patterns_for_language(language)
         for intent in intents:
-            templates = patterns[intent][:variants_per_intent]
-            for template in templates:
+            accepted_for_intent = 0
+            # Try all known templates for this intent. This matters when a generic
+            # template such as "{theme}" was already emitted for another language:
+            # the localized alternate keeps the language/intent represented without
+            # producing duplicate search text.
+            for template in patterns[intent]:
+                if accepted_for_intent >= variants_per_intent:
+                    break
                 text = _normalize_query(template.format(theme=request.theme))
                 if include_suffix and not include_applied:
                     text = _normalize_query(f"{text} {include_suffix}")
-                    include_applied = True
-                key = (language, intent, text.casefold())
-                if not text or key in seen:
+                key = text.casefold()
+                if not text or key in seen_text:
                     continue
-                seen.add(key)
+                seen_text.add(key)
+                if include_suffix and not include_applied:
+                    include_applied = True
                 result.append(
                     GeneratedQuery(
                         language=language,
@@ -96,15 +103,23 @@ def generate_queries(request: CaseResearchCreate) -> list[GeneratedQuery]:
                         target_platforms=tuple(request.platforms),
                     )
                 )
+                accepted_for_intent += 1
 
-    if include_suffix and not include_applied and result:
-        first = result[0]
-        replaced = GeneratedQuery(
-            language=first.language,
-            intent=first.intent,
-            query_text=_normalize_query(f"{first.query_text} {include_suffix}"),
-            target_platforms=first.target_platforms,
-        )
-        result[0] = replaced
+            # Unknown/custom languages may share every generic pattern with a
+            # previous language. Preserve the requested intent with a deterministic
+            # language-qualified fallback rather than silently dropping it.
+            if accepted_for_intent == 0:
+                fallback = _normalize_query(f"{request.theme} {language} {intent.replace('_', ' ')}")
+                key = fallback.casefold()
+                if fallback and key not in seen_text:
+                    seen_text.add(key)
+                    result.append(
+                        GeneratedQuery(
+                            language=language,
+                            intent=intent,
+                            query_text=fallback,
+                            target_platforms=tuple(request.platforms),
+                        )
+                    )
 
     return result
