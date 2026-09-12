@@ -19,6 +19,7 @@ class FakeProvider:
         available=True,
         error=None,
         candidates=None,
+        pages=None,
         search_supported=True,
     ):
         self.name = name
@@ -27,6 +28,7 @@ class FakeProvider:
         self.available = available
         self.error = error
         self._candidates = candidates or []
+        self._pages = pages
         self.calls = 0
         self.capabilities = ProviderCapabilities(
             search_supported=search_supported,
@@ -48,6 +50,11 @@ class FakeProvider:
         self.calls += 1
         if self.error:
             raise self.error
+        if self._pages is not None:
+            index = 0 if cursor is None else int(cursor)
+            page_candidates = self._pages[index]
+            next_cursor = str(index + 1) if index + 1 < len(self._pages) else None
+            return CandidatePage(candidates=page_candidates, next_cursor=next_cursor)
         return CandidatePage(candidates=self._candidates)
 
     def fetch_source(self, candidate):
@@ -122,6 +129,12 @@ def test_provider_budget_prevents_unbounded_requests():
     assert budget.exhausted is True
 
 
+def test_provider_budget_is_exhausted_at_result_limit():
+    budget = ProviderBudget(request_limit=20, result_limit=2)
+    budget.consume(results=2)
+    assert budget.exhausted is True
+
+
 def test_registry_truncates_results_to_remaining_budget():
     registry = ProviderRegistry(priorities={"x": ["web_search"]})
     provider = FakeProvider(
@@ -137,6 +150,46 @@ def test_registry_truncates_results_to_remaining_budget():
     assert len(outcome.page.candidates) == 2
     assert outcome.page.raw_json["truncated_by_budget"] is True
     assert budget.results_used == 2
+
+
+def test_registry_paginates_until_provider_budget_is_reached():
+    registry = ProviderRegistry(priorities={"x": ["web_search"]})
+    provider = FakeProvider(
+        name="x-web",
+        method="web_search",
+        pages=[
+            [_candidate("1"), _candidate("2")],
+            [_candidate("3"), _candidate("4")],
+            [_candidate("5")],
+        ],
+    )
+    registry.register(provider)
+    budget = ProviderBudget(request_limit=10, result_limit=4)
+
+    outcome = registry.search_with_fallback("x", SimpleNamespace(), SimpleNamespace(), budget)
+
+    assert [candidate.external_id for candidate in outcome.page.candidates] == ["1", "2", "3", "4"]
+    assert provider.calls == 2
+    assert budget.results_used == 4
+    assert outcome.page.raw_json["pages_fetched"] == 2
+    assert outcome.page.raw_json["truncated_by_budget"] is True
+
+
+def test_registry_stops_at_request_budget_even_if_cursor_remains():
+    registry = ProviderRegistry(priorities={"x": ["web_search"]})
+    provider = FakeProvider(
+        name="x-web",
+        method="web_search",
+        pages=[[_candidate("1")], [_candidate("2")], [_candidate("3")]],
+    )
+    registry.register(provider)
+    budget = ProviderBudget(request_limit=2, result_limit=10)
+
+    outcome = registry.search_with_fallback("x", SimpleNamespace(), SimpleNamespace(), budget)
+
+    assert [candidate.external_id for candidate in outcome.page.candidates] == ["1", "2"]
+    assert provider.calls == 2
+    assert outcome.page.raw_json["truncated_by_budget"] is True
 
 
 def test_registry_returns_partial_error_instead_of_raising_when_all_methods_fail():
