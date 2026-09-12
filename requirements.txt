@@ -23,7 +23,8 @@ python-multipart
 yt-dlp
 httpx
 
-# Case Radar authenticated social sessions
+# Case Radar free web discovery + authenticated social sessions
+ddgs
 twikit
 instagrapi
 
