@@ -48,6 +48,8 @@ class CaseRadarOrchestrator:
         ("finalizing", 95),
     )
 
+    CASE_SEED_INTENTS = frozenset({"core", "local_language"})
+
     SOCIAL_CLAIM_PRIORITY = (
         "debunk",
         "technical_explanation",
@@ -68,6 +70,12 @@ class CaseRadarOrchestrator:
     def _check_cancel(cancel_check: Callable[[], bool]) -> None:
         if cancel_check():
             raise CaseRadarCancelled("Pesquisa cancelada")
+
+    @classmethod
+    def _can_seed_case(cls, source: ResearchSource | Any) -> bool:
+        query = getattr(source, "query", None)
+        intent = getattr(query, "intent", None)
+        return intent in cls.CASE_SEED_INTENTS
 
     @staticmethod
     def _candidate_from_source(source: ResearchSource) -> Candidate:
@@ -272,8 +280,14 @@ class CaseRadarOrchestrator:
         for group in groups.values():
             existing = [existing_by_source[source.id] for source in group if source.id in existing_by_source]
             case = min(existing, key=lambda item: item.id) if existing else None
+            seed_sources = [source for source in group if self._can_seed_case(source)]
+            if case is None and not seed_sources:
+                continue
             if case is None:
-                primary = min(group, key=lambda source: (source.published_at is None, source.published_at, source.id))
+                primary = min(
+                    seed_sources,
+                    key=lambda source: (source.published_at is None, source.published_at, source.id),
+                )
                 case = self.repo.create_case(
                     run_id=run_id,
                     provisional_title=primary.title_or_caption or primary.text or f"Caso {primary.id}",
