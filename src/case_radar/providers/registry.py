@@ -175,6 +175,7 @@ def build_default_registry() -> ProviderRegistry:
         InstagramWebSearchProvider,
     )
     from src.case_radar.providers.reddit import RedditCaseRadarProvider
+    from src.case_radar.providers.reddit_oauth import RedditOAuthProvider
     from src.case_radar.providers.tiktok import TikTokLoggedInProvider, TikTokWebSearchProvider
     from src.case_radar.providers.tiktok_research import TikTokResearchProvider
     from src.case_radar.providers.web_search import WebSearchProvider
@@ -188,7 +189,7 @@ def build_default_registry() -> ProviderRegistry:
             "x": ["logged_in", "web_search", "official_api"],
             "tiktok": ["logged_in", "web_search", "official_api"],
             "instagram": ["logged_in", "web_search", "official_api"],
-            "reddit": ["public_http", "web_search"],
+            "reddit": ["official_api", "public_http", "web_search"],
             "web": ["web_search"],
         }
     )
@@ -203,6 +204,7 @@ def build_default_registry() -> ProviderRegistry:
     registry.register(InstagramLoggedInProvider())
     registry.register(InstagramWebSearchProvider())
     registry.register(InstagramOfficialProvider())
+    registry.register(RedditOAuthProvider())
     registry.register(RedditCaseRadarProvider())
     registry.register(WebSearchProvider(target_platform="reddit", site_domain="reddit.com"))
     registry.register(WebSearchProvider())
