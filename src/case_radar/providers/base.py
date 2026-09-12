@@ -67,7 +67,10 @@ class ProviderBudget:
 
     @property
     def exhausted(self) -> bool:
-        return not self.can_consume(requests=1)
+        requests_exhausted = self.request_limit >= 0 and self.requests_used >= self.request_limit
+        results_exhausted = self.result_limit >= 0 and self.results_used >= self.result_limit
+        cost_exhausted = self.cost_unit_limit > 0 and self.cost_units_used >= self.cost_unit_limit
+        return requests_exhausted or results_exhausted or cost_exhausted
 
 
 class CaseRadarProvider(Protocol):
