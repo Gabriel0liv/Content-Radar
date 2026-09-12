@@ -83,7 +83,7 @@ jobs:
           --deselect=src/test_video_workshop.py::test_open_canva_route_redirects_without_exposing_board_url_in_ui_flow
       - name: Real public provider smoke (informational)
         continue-on-error: true
-        run: python scripts/case_radar_provider_smoke.py --query "unexplained footage original source"
+        run: PYTHONPATH=. python scripts/case_radar_provider_smoke.py --query "unexplained footage original source"
       - name: Pre-existing legacy route drift (informational)
         continue-on-error: true
         run: >-
