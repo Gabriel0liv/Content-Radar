@@ -4,7 +4,20 @@ import { useState } from "react";
 import { ExternalLink, Save, ShieldAlert, ShieldCheck } from "lucide-react";
 
 import { updateResearchCase } from "@/lib/api";
-import type { DossierClaim, ResearchCase, ResearchCaseStatus } from "@/lib/types";
+import type { DossierClaim, DossierSource, ResearchCase, ResearchCaseStatus } from "@/lib/types";
+
+interface SocialContextView {
+  id?: number | string;
+  body?: string;
+  author_handle?: string | null;
+  usefulness_score?: number;
+}
+
+interface TranscriptSegmentView {
+  id?: number | string;
+  start_time?: number | null;
+  text?: string;
+}
 
 function ClaimSection({ title, claims, tone }: { title: string; claims: DossierClaim[]; tone: "good" | "warn" | "bad" | "neutral" }) {
   if (!claims.length) return null;
@@ -22,6 +35,14 @@ function ClaimSection({ title, claims, tone }: { title: string; claims: DossierC
       </div>
     </section>
   );
+}
+
+function sourceUrl(source: DossierSource): string | null {
+  return source.url || source.canonical_url || null;
+}
+
+function sourceLabel(source: DossierSource): string {
+  return source.title || source.title_or_caption || source.author_handle || sourceUrl(source) || `Fonte ${source.id}`;
 }
 
 export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchCase; onUpdated?: (item: ResearchCase) => void }) {
@@ -63,20 +84,32 @@ export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchC
             {dossier.summary && <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-400">{dossier.summary}</p>}
           </div>
           <div className="flex flex-wrap gap-2">
-            <button onClick={() => save({ status: "approved" })} disabled={saving} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Aprovar</button>
-            <button onClick={() => save({ status: "rejected" })} disabled={saving} className="rounded-lg border border-rose-900 px-3 py-2 text-xs font-semibold text-rose-300 disabled:opacity-50">Rejeitar</button>
-            <button onClick={() => save({ already_used: true })} disabled={saving} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 disabled:opacity-50">Já usado</button>
+            <button onClick={() => void save({ status: "approved" })} disabled={saving} className="rounded-lg bg-emerald-700 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Aprovar</button>
+            <button onClick={() => void save({ status: "rejected" })} disabled={saving} className="rounded-lg border border-rose-900 px-3 py-2 text-xs font-semibold text-rose-300 disabled:opacity-50">Rejeitar</button>
+            <button onClick={() => void save({ already_used: true })} disabled={saving} className="rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-300 disabled:opacity-50">Já usado</button>
           </div>
         </div>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
-        {[{ label: "Fonte principal", source: dossier.primary_source }, { label: "Mais antiga encontrada", source: dossier.earliest_known_source }, { label: "Provável original", source: dossier.likely_original_source }].map(({ label, source }) => (
-          <div key={label} className="rounded-xl border border-slate-800 bg-[#0b101c] p-4">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
-            {source ? <><p className="mt-2 truncate text-sm font-medium text-slate-200">{source.title || source.author_handle || source.url}</p><a href={source.url} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300">Abrir fonte <ExternalLink className="h-3 w-3" /></a></> : <p className="mt-2 text-sm text-slate-600">Não resolvida</p>}
-          </div>
-        ))}
+        {[
+          { label: "Fonte principal", source: dossier.primary_source },
+          { label: "Mais antiga encontrada", source: dossier.earliest_known_source },
+          { label: "Provável original", source: dossier.likely_original_source },
+        ].map(({ label, source }) => {
+          const href = source ? sourceUrl(source) : null;
+          return (
+            <div key={label} className="rounded-xl border border-slate-800 bg-[#0b101c] p-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</p>
+              {source ? (
+                <>
+                  <p className="mt-2 truncate text-sm font-medium text-slate-200">{sourceLabel(source)}</p>
+                  {href && <a href={href} target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center gap-1 text-xs text-indigo-400 hover:text-indigo-300">Abrir fonte <ExternalLink className="h-3 w-3" /></a>}
+                </>
+              ) : <p className="mt-2 text-sm text-slate-600">Não resolvida</p>}
+            </div>
+          );
+        })}
       </div>
 
       <ClaimSection title="Contexto corroborado" claims={dossier.verified_context || []} tone="good" />
@@ -88,9 +121,9 @@ export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchC
         <section className="rounded-xl border border-slate-800 bg-[#0b101c] p-4">
           <h3 className="mb-3 text-sm font-semibold text-white">Comentários e contexto social úteis</h3>
           <div className="space-y-3">
-            {dossier.useful_social_context.slice(0, 20).map((context: any) => (
-              <div key={context.id} className="border-l-2 border-slate-700 pl-3 text-sm text-slate-300">
-                <p>{context.body}</p>
+            {(dossier.useful_social_context as SocialContextView[]).slice(0, 20).map((context, index) => (
+              <div key={context.id ?? index} className="border-l-2 border-slate-700 pl-3 text-sm text-slate-300">
+                <p>{context.body || "Comentário sem texto"}</p>
                 <p className="mt-1 text-xs text-slate-500">{context.author_handle || "autor desconhecido"} · utilidade {Number(context.usefulness_score || 0).toFixed(1)}</p>
               </div>
             ))}
@@ -102,10 +135,10 @@ export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchC
         <section className="rounded-xl border border-slate-800 bg-[#0b101c] p-4">
           <h3 className="mb-3 text-sm font-semibold text-white">Trechos transcritos</h3>
           <div className="max-h-80 space-y-2 overflow-y-auto pr-2">
-            {dossier.transcript_segments.map((segment: any) => (
-              <div key={segment.id} className="grid grid-cols-[72px_1fr] gap-3 text-sm">
+            {(dossier.transcript_segments as TranscriptSegmentView[]).map((segment, index) => (
+              <div key={segment.id ?? index} className="grid grid-cols-[72px_1fr] gap-3 text-sm">
                 <span className="font-mono text-xs text-slate-500">{segment.start_time == null ? "—" : `${Number(segment.start_time).toFixed(1)}s`}</span>
-                <span className="text-slate-300">{segment.text}</span>
+                <span className="text-slate-300">{segment.text || ""}</span>
               </div>
             ))}
           </div>
@@ -116,7 +149,7 @@ export function CaseDossier({ initialCase, onUpdated }: { initialCase: ResearchC
         <label className="text-sm font-semibold text-white">Notas manuais</label>
         <textarea value={notes} onChange={(event) => setNotes(event.target.value)} rows={4} className="mt-2 w-full resize-none rounded-lg border border-slate-700 bg-[#070b12] px-3 py-2.5 text-sm text-white" />
         {error && <p className="mt-2 text-xs text-rose-400">{error}</p>}
-        <button onClick={() => save({})} disabled={saving} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50"><Save className="h-3.5 w-3.5" />Salvar notas</button>
+        <button onClick={() => void save({})} disabled={saving} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-slate-700 px-3 py-2 text-xs font-semibold text-slate-200 disabled:opacity-50"><Save className="h-3.5 w-3.5" />Salvar notas</button>
       </section>
     </div>
   );
