@@ -83,7 +83,7 @@ export interface ReferenceSource {
   language: string | null;
   status: ReferenceSourceStatus;
   notes: string | null;
-  raw_json: Record<string, any> | null;
+  raw_json: Record<string, unknown> | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,7 +105,7 @@ export interface ReferenceImportJob {
   selected_language: string | null;
   selected_caption_type: string | null;
   error_message: string | null;
-  raw_result_json: Record<string, any> | null;
+  raw_result_json: Record<string, unknown> | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -121,7 +121,7 @@ export interface Transcript {
   full_text_hash: string;
   srt_text: string | null;
   vtt_text: string | null;
-  raw_json: Record<string, any> | null;
+  raw_json: Record<string, unknown> | null;
   created_at: string;
   version_number: number;
   is_active: boolean;
@@ -219,6 +219,14 @@ export interface CaseResearchCreatePayload {
   global_result_budget: number;
 }
 
+export interface ProviderCoverageEntry {
+  results?: number;
+  requests?: number;
+  method?: string | null;
+  available?: boolean;
+  errors?: Array<{ code?: string; message?: string; provider?: string | null }>;
+}
+
 export interface CaseResearchRun {
   id: number;
   status: CaseRadarRunStatus;
@@ -226,14 +234,14 @@ export interface CaseResearchRun {
   progress_percent: number;
   progress_message: string | null;
   request_json: CaseResearchCreatePayload;
-  provider_coverage_json: Record<string, any>;
+  provider_coverage_json: Record<string, ProviderCoverageEntry>;
   discovered_candidates: number;
   clustered_cases: number;
   usable_cases: number;
   rejected_cases: number;
   worker_id: string | null;
-  errors_json: Array<Record<string, any>>;
-  result_summary_json: Record<string, any> | null;
+  errors_json: Array<Record<string, unknown>>;
+  result_summary_json: Record<string, unknown> | null;
   created_at: string;
   started_at: string | null;
   finished_at: string | null;
@@ -278,13 +286,27 @@ export interface ResearchSource {
   thumbnail_url: string | null;
   duration_seconds: number | null;
   language: string | null;
-  engagement_json: Record<string, any>;
+  engagement_json: Record<string, unknown>;
   hashtags_json: string[];
-  relation_json: Record<string, any> | null;
+  relation_json: Record<string, unknown> | null;
   discovery_method: string;
   source_confidence: number;
   content_item_id: number | null;
   reference_source_id: number | null;
+}
+
+export interface DossierSource {
+  id: number;
+  platform?: string;
+  url?: string;
+  canonical_url?: string;
+  title?: string | null;
+  title_or_caption?: string | null;
+  author?: string | null;
+  author_handle?: string | null;
+  published_at?: string | null;
+  role?: string | null;
+  confidence?: number | null;
 }
 
 export interface DossierClaim {
@@ -303,21 +325,21 @@ export interface CaseDossier {
   title: string;
   summary: string | null;
   what_happens: string | null;
-  primary_source: Record<string, any> | null;
-  earliest_known_source: Record<string, any> | null;
-  likely_original_source: Record<string, any> | null;
-  sources: Array<Record<string, any>>;
+  primary_source: DossierSource | null;
+  earliest_known_source: DossierSource | null;
+  likely_original_source: DossierSource | null;
+  sources: DossierSource[];
   verified_context: DossierClaim[];
   unverified_claims: DossierClaim[];
   contradictions: DossierClaim[];
   alternative_explanations: DossierClaim[];
-  useful_social_context: Array<Record<string, any>>;
-  transcript_segments: Array<Record<string, any>>;
-  evidence: Array<Record<string, any>>;
+  useful_social_context: Array<Record<string, unknown>>;
+  transcript_segments: Array<Record<string, unknown>>;
+  evidence: Array<Record<string, unknown>>;
   origin_status: "unknown" | "likely" | "confirmed";
   provenance_confidence: number;
   research_confidence: number;
-  provider_coverage: Record<string, any>;
+  provider_coverage: Record<string, ProviderCoverageEntry>;
   dossier_version: number;
 }
 
