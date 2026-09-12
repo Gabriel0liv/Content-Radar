@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import os
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -9,8 +10,19 @@ import httpx
 
 from src.case_radar.providers.base import ProviderAuthExpired, ProviderPermanentError, ProviderRateLimited, ProviderUnavailable
 from src.case_radar.providers.web_search import WebSearchProvider
-from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities, SocialContextPage, SourceSnapshot
+from src.case_radar.types import Candidate, CandidatePage, ProviderCapabilities, SocialContextPage, SocialContextRecord, SourceSnapshot
 from src.case_radar.url_normalization import canonicalize_url
+
+
+def _parse_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return None
 
 
 class TikTokWebSearchProvider(WebSearchProvider):
@@ -126,9 +138,18 @@ class TikTokLoggedInProvider:
             official_api=False,
             cost_class="free",
         )
+        if adapter is not None:
+            self._refresh_capabilities(adapter)
+
+    def _refresh_capabilities(self, adapter: Any) -> None:
+        self.capabilities.source_fetch_supported = callable(getattr(adapter, "fetch_source", None))
+        social_supported = callable(getattr(adapter, "fetch_social_context", None))
+        self.capabilities.comments_supported = social_supported
+        self.capabilities.replies_supported = social_supported
 
     def _load_adapter(self):
         if self.adapter is not None:
+            self._refresh_capabilities(self.adapter)
             return self.adapter
         if not self.session_file or not Path(self.session_file).is_file():
             raise ProviderUnavailable("Sessão TikTok não configurada", provider=self.name)
@@ -137,7 +158,9 @@ class TikTokLoggedInProvider:
             raise ProviderUnavailable("Adapter TikTok logged-in não configurado", provider=self.name)
         try:
             module = importlib.import_module(module_name)
-            return module.create_adapter(self.session_file)
+            self.adapter = module.create_adapter(self.session_file)
+            self._refresh_capabilities(self.adapter)
+            return self.adapter
         except ImportError as exc:
             raise ProviderUnavailable("Adapter TikTok logged-in não instalado", provider=self.name) from exc
         except Exception as exc:
@@ -145,8 +168,15 @@ class TikTokLoggedInProvider:
 
     def is_available(self) -> bool:
         if self.adapter is not None:
+            self._refresh_capabilities(self.adapter)
             return True
-        return bool(self.session_file and Path(self.session_file).is_file() and os.getenv("CASE_RADAR_TIKTOK_ADAPTER_MODULE", "").strip())
+        if not (self.session_file and Path(self.session_file).is_file() and os.getenv("CASE_RADAR_TIKTOK_ADAPTER_MODULE", "").strip()):
+            return False
+        try:
+            self._load_adapter()
+            return True
+        except (ProviderUnavailable, ProviderAuthExpired):
+            return False
 
     def search(self, request: Any, query: Any, cursor: str | None = None) -> CandidatePage:
         adapter = self._load_adapter()
@@ -189,7 +219,76 @@ class TikTokLoggedInProvider:
         return CandidatePage(candidates=candidates, next_cursor=None, raw_json={"result_count": len(candidates)})
 
     def fetch_source(self, candidate: Candidate) -> SourceSnapshot:
-        raise ProviderUnavailable("TikTok logged-in fetch_source ainda não suportado", provider=self.name)
+        adapter = self._load_adapter()
+        method = getattr(adapter, "fetch_source", None)
+        if not callable(method):
+            raise ProviderUnavailable("TikTok logged-in fetch_source não suportado pelo adapter", provider=self.name)
+        try:
+            row = method(candidate.canonical_url, external_id=candidate.external_id)
+        except Exception as exc:
+            raise ProviderUnavailable("TikTok logged-in falhou ao enriquecer a fonte", provider=self.name) from exc
+        if isinstance(row, Candidate):
+            enriched = row
+        elif isinstance(row, dict):
+            enriched = Candidate(
+                platform="tiktok",
+                external_id=str(row.get("id") or candidate.external_id) if (row.get("id") or candidate.external_id) else None,
+                canonical_url=canonicalize_url(str(row.get("url") or candidate.canonical_url)),
+                author_handle=row.get("author_handle") or candidate.author_handle,
+                author_display_name=row.get("author_display_name") or candidate.author_display_name,
+                title_or_caption=row.get("caption") or candidate.title_or_caption,
+                text=row.get("caption") or row.get("text") or candidate.text,
+                published_at=_parse_datetime(row.get("published_at")) or candidate.published_at,
+                media_type="video",
+                thumbnail_url=row.get("thumbnail_url") or candidate.thumbnail_url,
+                duration_seconds=row.get("duration_seconds") or candidate.duration_seconds,
+                language=row.get("language") or candidate.language,
+                engagement=row.get("engagement") or candidate.engagement,
+                hashtags=row.get("hashtags") or candidate.hashtags,
+                relation=row.get("relation") or candidate.relation,
+                discovery_query=candidate.discovery_query,
+                discovery_method="logged_in",
+                raw_json={},
+                source_confidence=float(row.get("source_confidence", candidate.source_confidence)),
+            )
+        else:
+            raise ProviderUnavailable("Adapter TikTok retornou fonte em formato inválido", provider=self.name)
+        return SourceSnapshot(candidate=enriched, raw_json={"source": "tiktok_logged_in"})
 
     def fetch_social_context(self, source: Candidate | SourceSnapshot, options: Any) -> SocialContextPage:
-        raise ProviderUnavailable("TikTok logged-in comments ainda não suportados", provider=self.name)
+        adapter = self._load_adapter()
+        method = getattr(adapter, "fetch_social_context", None)
+        if not callable(method):
+            raise ProviderUnavailable("TikTok logged-in comments não suportados pelo adapter", provider=self.name)
+        candidate = source.candidate if isinstance(source, SourceSnapshot) else source
+        max_comments = int(getattr(options, "max_comments", None) or (options.get("max_comments") if isinstance(options, dict) else 100) or 100)
+        max_depth = int(getattr(options, "max_depth", None) or (options.get("max_depth") if isinstance(options, dict) else 6) or 6)
+        try:
+            rows = method(candidate.canonical_url, external_id=candidate.external_id, max_comments=max_comments, max_depth=max_depth)
+        except Exception as exc:
+            text = str(exc).casefold()
+            if any(token in text for token in ("login", "auth", "challenge", "cookie", "session")):
+                raise ProviderAuthExpired("Sessão TikTok inválida, expirada ou em challenge", provider=self.name) from exc
+            raise ProviderUnavailable("TikTok logged-in falhou ao coletar comentários", provider=self.name) from exc
+        items: list[SocialContextRecord] = []
+        for row in list(rows or [])[:max_comments]:
+            if not isinstance(row, dict):
+                continue
+            items.append(
+                SocialContextRecord(
+                    platform_item_id=str(row.get("id")) if row.get("id") is not None else None,
+                    parent_id=str(row.get("parent_id")) if row.get("parent_id") is not None else None,
+                    depth=max(0, int(row.get("depth") or 0)),
+                    author_handle=row.get("author_handle"),
+                    author_display_name=row.get("author_display_name"),
+                    body=str(row.get("body") or row.get("text") or ""),
+                    published_at=_parse_datetime(row.get("published_at")),
+                    engagement=row.get("engagement") or {},
+                    permalink=canonicalize_url(str(row["permalink"])) if row.get("permalink") else None,
+                    external_links=[canonicalize_url(str(url)) for url in (row.get("external_links") or [])],
+                    pinned=bool(row.get("pinned")),
+                    author_reply=bool(row.get("author_reply")),
+                    raw_json={},
+                )
+            )
+        return SocialContextPage(items=items, raw_json={"collected": len(items), "adapter": True})
