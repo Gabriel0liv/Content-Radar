@@ -3,7 +3,7 @@
 Content Radar é uma ferramenta de pesquisa de conteúdo com um objetivo simples:
 
 ```text
-encontrar algo útil -> salvar/transcrever -> registrar uma ideia -> trabalhar manualmente depois
+encontrar algo útil -> pesquisar/verificar -> salvar/transcrever -> registrar uma ideia -> trabalhar manualmente depois
 ```
 
 Ele não tenta ser editor de roteiro, gestor de produção ou ferramenta de design.
@@ -24,11 +24,80 @@ Mantém:
 - status simples de triagem;
 - notas pessoais.
 
+### Case Radar
+
+`/case-radar`
+
+Pesquisa manual de casos e vídeos para investigação. O usuário descreve um tema, escolhe idiomas/plataformas e define quantos casos utilizáveis deseja. Um worker separado executa a pesquisa em estágios e mantém o progresso no PostgreSQL, então fechar a página não interrompe a execução.
+
+O Case Radar pode descobrir e cruzar material de:
+
+- YouTube;
+- X/Twitter;
+- TikTok;
+- Instagram;
+- Reddit;
+- web geral.
+
+O desenho é **free-first**. X, TikTok e Instagram aceitam caminhos em camadas quando configurados: descoberta via web, sessão autenticada experimental e provider oficial quando houver credenciais/acesso apropriado. Nenhum provider pago é obrigatório para a aplicação subir.
+
+A pesquisa tenta:
+
+- gerar consultas em PT/EN/ES;
+- encontrar posts, vídeos e páginas relacionadas;
+- coletar comentários/replies quando o provider suporta;
+- dar prioridade a comentários com origem, contexto, correções, links, debunks e respostas do autor;
+- agrupar reposts e fontes que parecem representar o mesmo caso;
+- identificar a fonte mais antiga conhecida e uma provável origem sem fingir certeza;
+- manter alegações como `unverified`, `source_claimed`, `corroborated` ou `contradicted`;
+- produzir um dossiê auditável com links e evidências.
+
+Comentários são tratados como **pistas/evidências**, não como fatos. Um comentário popular não é promovido a contexto confirmado só por ter muitos likes.
+
+#### Worker do Case Radar
+
+No Docker Compose:
+
+```bash
+docker compose up -d postgres migrate backend case_worker frontend
+```
+
+O serviço `case_worker` usa o Dockerfile normal, não precisa de GPU e não depende de n8n.
+
+Configuração básica:
+
+```env
+CASE_RADAR_WORKER_ID=case-worker-1
+CASE_RADAR_WORKER_POLL_SECONDS=2
+CASE_RADAR_WORKER_LEASE_SECONDS=180
+CASE_RADAR_WEB_SEARCH_URL=
+CASE_RADAR_WEB_SEARCH_API_KEY=
+CASE_RADAR_X_SESSION_FILE=
+X_BEARER_TOKEN=
+CASE_RADAR_TIKTOK_SESSION_FILE=
+TIKTOK_ACCESS_TOKEN=
+CASE_RADAR_INSTAGRAM_SESSION_FILE=
+INSTAGRAM_ACCESS_TOKEN=
+REDDIT_CLIENT_ID=
+REDDIT_CLIENT_SECRET=
+```
+
+Sessões/cookies ficam em arquivos locais fora do Git. Tokens e conteúdo de sessão não devem ser enviados pela API nem salvos em `raw_json`.
+
+#### Limites conhecidos
+
+- Busca web indireta em X/TikTok/Instagram não cobre toda a plataforma.
+- Providers logados são opcionais/experimentais e podem parar de funcionar quando a plataforma altera o site ou a sessão expira.
+- Acesso oficial pode depender de plano, aprovação ou escopo da plataforma.
+- O Case Radar não cria nem rotaciona contas automaticamente e não implementa CAPTCHA/challenge bypass.
+- `earliest known source` significa a fonte mais antiga que a pesquisa conseguiu sustentar, não prova absoluta de autoria original.
+- Pesquisa de direitos/licenciamento para reutilização de mídia permanece fora do escopo.
+
 ### Pesquisas
 
 `/search-configs`
 
-Configura nichos, sementes e buscas usadas para alimentar o Radar.
+Configura nichos, sementes e buscas usadas para alimentar o Radar tradicional.
 
 ### Biblioteca
 
@@ -36,10 +105,9 @@ Configura nichos, sementes e buscas usadas para alimentar o Radar.
 
 Guarda vídeos usados como referência e suas transcrições.
 
-A importação do YouTube suporta dois modos:
+O Case Radar reutiliza esta infraestrutura quando uma fonte pode ser promovida para referência. Não existe uma segunda tabela/pipeline de transcrição específica do Case Radar.
 
-- **Rápido**: legenda manual -> legenda automática -> áudio como fallback;
-- **Máxima fidelidade**: transcrição direta do áudio com `faster-whisper`.
+A importação do YouTube suporta os caminhos já existentes de captions/transcrição e o Speech Worker nativo pode executar STT/WhisperX conforme a configuração instalada.
 
 As transcrições preservam timestamps, versões e segmentos. O objetivo é capturar o que foi dito, não analisar ou comparar roteiros automaticamente.
 
@@ -68,7 +136,7 @@ O roteiro final pode ser escrito e comparado manualmente onde for mais convenien
 - TypeScript
 - Tailwind CSS
 - yt-dlp
-- faster-whisper
+- Speech Worker / WhisperX quando instalado
 
 ## Desenvolvimento local
 
@@ -93,6 +161,12 @@ $env:DATABASE_URL="postgresql://radar:radar@localhost:5433/dark_content_radar"
 
 API: `http://localhost:8000`
 
+### Case Worker
+
+```powershell
+.venv\Scripts\python -m case_worker.worker
+```
+
 ### Frontend
 
 ```bash
@@ -105,11 +179,37 @@ Frontend: `http://localhost:3000`
 
 ## Verificações importantes
 
-```bash
-python -m pytest src/test_ideas.py -v
-python src/test_captions.py
+Case Radar:
+
+```powershell
+python -m pytest -q src/test_case_radar_models.py src/test_case_radar_repository.py src/test_case_radar_api.py src/test_case_radar_query_generator.py src/test_case_radar_providers.py src/test_case_radar_web_search.py src/test_case_radar_youtube.py src/test_case_radar_reddit.py src/test_case_radar_social_context.py src/test_case_radar_clustering.py src/test_case_radar_provenance.py src/test_case_radar_dossier.py src/test_case_radar_reference_service.py src/test_case_radar_orchestrator.py src/test_case_worker_bootstrap.py
+```
+
+Regressão Speech compartilhada:
+
+```powershell
+python -m pytest -q src/test_speech_job_models.py src/test_speech_job_repository.py src/test_speech_jobs_service.py src/test_speech_worker_bootstrap.py src/test_speech_result_importer.py src/test_speech_api.py
+```
+
+Frontend:
+
+```powershell
 cd frontend
+npx tsc --noEmit
 npm run build
+```
+
+Compose/migrations:
+
+```powershell
+docker compose config
+alembic upgrade head
+```
+
+Antes de considerar a feature pronta para merge, também deve ser executada a suíte backend completa disponível:
+
+```powershell
+python -m pytest -q
 ```
 
 ## Compatibilidade com dados antigos
@@ -123,12 +223,15 @@ As rotas de Canva, boards e recursos filhos do workshop não fazem mais parte do
 Content Radar não pretende fazer automaticamente:
 
 - comparação de roteiros;
-- geração de roteiros;
+- geração de roteiros finais;
 - análise de estrutura de roteiro;
 - criação de thumbnails;
 - planejamento de música;
 - gestão de produção;
-- integração de Canva no fluxo principal;
-- publicação ou tracking pós-publicação.
+- publicação ou tracking pós-publicação;
+- monitoramento contínuo de temas do Case Radar;
+- criação/rotação automática de contas sociais;
+- bypass de controles de acesso de plataformas;
+- determinação automática de direitos/licenças de reutilização.
 
-O foco é continuar pequeno e útil: **descoberta, referências/transcrições e ideias**.
+O foco continua sendo **descoberta, investigação verificável, referências/transcrições e ideias**.
