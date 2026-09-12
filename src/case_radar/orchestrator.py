@@ -13,7 +13,16 @@ from src.case_radar.providers.registry import ProviderRegistry
 from src.case_radar.query_generator import generate_queries
 from src.case_radar.social_context import classify_social_item, score_social_item
 from src.case_radar.types import Candidate
-from src.models.case_radar import CaseEvidence, CaseResearchQuery, CaseSource, ResearchCase, ResearchSource, SocialContextItem
+from src.case_radar.url_normalization import canonicalize_url
+from src.models.case_radar import (
+    CaseClaim,
+    CaseEvidence,
+    CaseResearchQuery,
+    CaseSource,
+    ResearchCase,
+    ResearchSource,
+    SocialContextItem,
+)
 from src.repositories.case_radar import CaseRadarRepository
 from src.schemas.case_radar import CaseResearchCreate
 
@@ -37,6 +46,17 @@ class CaseRadarOrchestrator:
         ("clustering_cases", 65),
         ("researching_cases", 80),
         ("finalizing", 95),
+    )
+
+    SOCIAL_CLAIM_PRIORITY = (
+        "debunk",
+        "technical_explanation",
+        "correction",
+        "origin",
+        "context",
+        "author_response",
+        "witness_claim",
+        "link",
     )
 
     def __init__(self, repo: CaseRadarRepository, registry: ProviderRegistry) -> None:
@@ -182,8 +202,7 @@ class CaseRadarOrchestrator:
             except Exception:
                 continue
             parent_rows: dict[str, SocialContextItem] = {}
-            pending = list(page.items)
-            for item in pending:
+            for item in list(page.items):
                 parent_db_id = None
                 if item.parent_id:
                     parent = parent_rows.get(item.parent_id) or parent_rows.get(item.parent_id.removeprefix("t1_"))
@@ -266,18 +285,82 @@ class CaseRadarOrchestrator:
             cases.append(case)
         return list({case.id: case for case in cases}.values())
 
+    @classmethod
+    def _claim_type_for_social(cls, item: SocialContextItem) -> str | None:
+        categories = set(item.categories_json or [])
+        for category in cls.SOCIAL_CLAIM_PRIORITY:
+            if category in categories:
+                return "linked_source" if category == "link" else category
+        return None
+
+    def _materialize_social_claims(self, case: ResearchCase, social: list[SocialContextItem]) -> None:
+        for item in social:
+            claim_type = self._claim_type_for_social(item)
+            text = " ".join((item.body or "").split())
+            if claim_type is None or not text:
+                continue
+            status = "source_claimed" if item.author_reply or claim_type == "author_response" else "unverified"
+            usefulness = max(0.0, float(item.usefulness_score or 0.0))
+            confidence = min(0.65 if status == "source_claimed" else 0.45, 0.2 + usefulness / 100.0)
+            claim = self.repo.upsert_claim(
+                case_id=case.id,
+                normalized_claim_text=text,
+                claim_type=claim_type,
+                status=status,
+                confidence=confidence,
+            )
+            self.repo.link_evidence(
+                claim_id=claim.id,
+                stance="supports",
+                social_context_item_id=item.id,
+                source_id=item.source_id,
+                note="Pista extraída de comentário/resposta; não tratada como fato sem corroboração independente.",
+            )
+
+    def _social_link_targets(
+        self,
+        sources: list[ResearchSource],
+        social: list[SocialContextItem],
+    ) -> dict[int, set[int]]:
+        url_to_source: dict[str, int] = {}
+        for source in sources:
+            try:
+                url_to_source[canonicalize_url(source.canonical_url)] = int(source.id)
+            except Exception:
+                continue
+        result: dict[int, set[int]] = {int(source.id): set() for source in sources}
+        for item in social:
+            for url in item.urls_json or []:
+                try:
+                    target_id = url_to_source.get(canonicalize_url(str(url)))
+                except Exception:
+                    target_id = None
+                if target_id is not None and target_id != item.source_id:
+                    result.setdefault(int(item.source_id), set()).add(target_id)
+        return result
+
     def _research_cases(self, run_id: int, cases: list[ResearchCase], provider_coverage: dict[str, Any]) -> list[ResearchCase]:
         for case in cases:
-            links = list(
-                self.db.execute(select(CaseSource).where(CaseSource.case_id == case.id)).scalars()
-            )
+            links = list(self.db.execute(select(CaseSource).where(CaseSource.case_id == case.id)).scalars())
             sources = [self.db.get(ResearchSource, link.source_id) for link in links]
             sources = [source for source in sources if source is not None]
+            social = list(
+                self.db.execute(
+                    select(SocialContextItem).where(
+                        SocialContextItem.source_id.in_([source.id for source in sources])
+                    )
+                ).scalars()
+            ) if sources else []
+
+            self._materialize_social_claims(case, social)
+            social_targets = self._social_link_targets(sources, social)
+
             provenance_sources = []
             for source in sources:
-                linked_ids = ()
+                linked_ids: set[int] = set()
                 if isinstance(source.relation_json, dict):
-                    linked_ids = tuple(source.relation_json.get("linked_source_ids") or ())
+                    linked_ids.update(int(value) for value in source.relation_json.get("linked_source_ids") or ())
+                linked_ids.update(social_targets.get(int(source.id), set()))
                 provenance_sources.append(
                     ProvenanceSource(
                         source_id=source.id,
@@ -285,7 +368,7 @@ class CaseRadarOrchestrator:
                         platform=source.platform,
                         author_handle=source.author_handle,
                         canonical_url=source.canonical_url,
-                        links_to_source_ids=linked_ids,
+                        links_to_source_ids=tuple(sorted(linked_ids)),
                     )
                 )
             provenance = resolve_provenance(provenance_sources)
@@ -295,11 +378,12 @@ class CaseRadarOrchestrator:
             case.origin_confidence = provenance.confidence
             dated = [source.published_at for source in sources if source.published_at is not None]
             case.earliest_known_date = min(dated) if dated else None
-            case.research_confidence = min(1.0, 0.35 + (0.12 * len(sources)))
+            context_bonus = min(0.2, sum(1 for item in social if self._claim_type_for_social(item)) * 0.02)
+            case.research_confidence = min(1.0, 0.35 + (0.12 * len(sources)) + context_bonus)
             if case.status == "researching":
                 case.status = "ready"
 
-            claims = list(case.claims or [])
+            claims = list(self.db.execute(select(CaseClaim).where(CaseClaim.case_id == case.id)).scalars())
             evidence = list(
                 self.db.execute(
                     select(CaseEvidence)
@@ -307,13 +391,6 @@ class CaseRadarOrchestrator:
                     .where(CaseEvidence.claim.has(case_id=case.id))
                 ).scalars()
             )
-            social = list(
-                self.db.execute(
-                    select(SocialContextItem).where(
-                        SocialContextItem.source_id.in_([source.id for source in sources])
-                    )
-                ).scalars()
-            ) if sources else []
             case.dossier_json = build_factual_dossier(
                 case,
                 sources=sources,
@@ -350,7 +427,13 @@ class CaseRadarOrchestrator:
         run.discovered_candidates = len(sources)
         if provider_errors:
             existing_errors = list(run.errors_json or [])
-            run.errors_json = existing_errors + provider_errors
+            known = {(error.get("platform"), error.get("code"), error.get("provider"), error.get("message")) for error in existing_errors}
+            for error in provider_errors:
+                key = (error.get("platform"), error.get("code"), error.get("provider"), error.get("message"))
+                if key not in known:
+                    existing_errors.append(error)
+                    known.add(key)
+            run.errors_json = existing_errors
         self.db.add(run)
         self.db.commit()
 
@@ -371,7 +454,7 @@ class CaseRadarOrchestrator:
         self.db.commit()
 
         self._check_cancel(cancelled)
-        self._progress(progress, "researching_cases", 80, "Resolvendo proveniência e contexto")
+        self._progress(progress, "researching_cases", 80, "Resolvendo proveniência, comentários e contexto")
         cases = self._research_cases(run.id, cases, coverage)
 
         self._check_cancel(cancelled)
