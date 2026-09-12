@@ -19,7 +19,7 @@ class FakeSearchBackend:
 
 def test_canonicalize_social_and_youtube_urls_without_destroying_ids():
     assert canonicalize_url("https://twitter.com/user/status/123?utm_source=x") == "https://x.com/user/status/123"
-    assert canonicalize_url("https://x.com/user/status/456?s=20") == "https://x.com/user/status/456?s=20"
+    assert canonicalize_url("https://x.com/user/status/456?s=20") == "https://x.com/user/status/456"
     assert canonicalize_url("https://youtu.be/abc123?si=tracking") == "https://youtube.com/watch?v=abc123"
     assert canonicalize_url("https://www.youtube.com/shorts/xyz987?feature=share") == "https://youtube.com/watch?v=xyz987"
     assert canonicalize_url("https://www.instagram.com/reel/ABC/?igsh=tracking") == "https://instagram.com/reel/ABC"
