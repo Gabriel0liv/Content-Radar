@@ -128,7 +128,8 @@ def build_default_registry() -> ProviderRegistry:
         TikTokWebSearchProvider,
     )
     from src.case_radar.providers.web_search import WebSearchProvider
-    from src.case_radar.providers.x import XLoggedInProvider, XOfficialApiProvider, XWebSearchProvider
+    from src.case_radar.providers.x import XOfficialApiProvider, XWebSearchProvider
+    from src.case_radar.providers.x_twikit import TwikitXLoggedInProvider
     from src.case_radar.providers.youtube import YouTubeCaseRadarProvider
 
     registry = ProviderRegistry(
@@ -143,7 +144,7 @@ def build_default_registry() -> ProviderRegistry:
     )
     registry.register(YouTubeCaseRadarProvider())
     registry.register(WebSearchProvider(target_platform="youtube", site_domain="youtube.com"))
-    registry.register(XLoggedInProvider())
+    registry.register(TwikitXLoggedInProvider())
     registry.register(XWebSearchProvider())
     registry.register(XOfficialApiProvider())
     registry.register(TikTokLoggedInProvider())
