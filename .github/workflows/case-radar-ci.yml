@@ -100,5 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Prepare disposable env
+        run: cp .env.example .env
       - name: Validate Compose
         run: docker compose config
