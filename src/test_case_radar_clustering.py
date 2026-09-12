@@ -70,6 +70,26 @@ def test_distinctive_title_contained_in_aggregated_search_title_merges():
     assert "contained_distinctive_title" in decision.reasons
 
 
+def test_platform_suffix_does_not_split_indexed_duplicate_title():
+    clean = ClusterFeatures(title="Real Footage of Unexplained Videos That Shocked the Internet")
+    indexed = ClusterFeatures(title="Real Footage of Unexplained Videos That Shocked the Internet - YouTube")
+    decision = compare_sources(clean, indexed)
+    assert decision.action == "merge"
+    assert "same_distinctive_title" in decision.reasons or "contained_distinctive_title" in decision.reasons
+
+
+def test_platform_suffix_title_merges_with_aggregated_search_title():
+    indexed = ClusterFeatures(title="Real Footage of Unexplained Videos That Shocked the Internet - YouTube")
+    aggregated = ClusterFeatures(
+        title=(
+            "Watch Unexplained Caught on Camera online "
+            "Real Footage of Unexplained Videos That Shocked the Internet"
+            "Real Footage of Unexplained Videos That Shocked the Internet"
+        )
+    )
+    assert compare_sources(indexed, aggregated).action == "merge"
+
+
 def test_short_generic_title_containment_does_not_auto_merge():
     a = ClusterFeatures(title="Unexplained Footage")
     b = ClusterFeatures(title="Archive of Unexplained Footage From Different Countries and Years")
