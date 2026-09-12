@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
-from typing import Annotated
+from datetime import date, datetime
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -9,6 +9,8 @@ from src.case_radar.types import Platform, ResearchDepth
 
 
 ProviderBudget = Annotated[int, Field(ge=0, le=5000)]
+CaseStatus = Literal["researching", "ready", "approved", "rejected", "duplicate", "already_used"]
+RunStatus = Literal["queued", "running", "completed", "partially_completed", "failed", "cancelled"]
 
 
 class CaseResearchCreate(BaseModel):
@@ -81,3 +83,111 @@ class CaseResearchCreate(BaseModel):
         if self.date_from is not None and self.date_to is not None and self.date_from > self.date_to:
             raise ValueError("date_from não pode ser posterior a date_to")
         return self
+
+
+class CaseResearchRunRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    status: RunStatus
+    stage: str
+    progress_percent: int
+    progress_message: str | None = None
+    request_json: dict[str, Any]
+    provider_coverage_json: dict[str, Any]
+    discovered_candidates: int
+    clustered_cases: int
+    usable_cases: int
+    rejected_cases: int
+    worker_id: str | None = None
+    errors_json: list[dict[str, Any]]
+    result_summary_json: dict[str, Any] | None = None
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    updated_at: datetime
+
+
+class CaseResearchRunListResponse(BaseModel):
+    items: list[CaseResearchRunRead]
+    total: int
+    limit: int
+    offset: int
+
+
+class CaseResearchQueryRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    language: str
+    target_platform: str | None = None
+    query_text: str
+    intent: str
+    status: str
+    result_count: int
+    error_message: str | None = None
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResearchSourceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    query_id: int | None = None
+    platform: Platform
+    external_id: str | None = None
+    canonical_url: str
+    author_handle: str | None = None
+    author_display_name: str | None = None
+    title_or_caption: str | None = None
+    text: str | None = None
+    published_at: datetime | None = None
+    discovered_at: datetime
+    media_type: str | None = None
+    thumbnail_url: str | None = None
+    duration_seconds: float | None = None
+    language: str | None = None
+    engagement_json: dict[str, Any]
+    hashtags_json: list[str]
+    relation_json: dict[str, Any] | None = None
+    discovery_method: str
+    source_confidence: float
+    content_item_id: int | None = None
+    reference_source_id: int | None = None
+
+
+class ResearchCaseRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    run_id: int
+    provisional_title: str
+    normalized_summary: str | None = None
+    status: CaseStatus
+    alleged_date: datetime | None = None
+    alleged_location: str | None = None
+    earliest_known_date: datetime | None = None
+    origin_status: Literal["unknown", "likely", "confirmed"]
+    origin_confidence: float
+    research_confidence: float
+    likely_original_source_id: int | None = None
+    earliest_known_source_id: int | None = None
+    selected_primary_source_id: int | None = None
+    dossier_version: int
+    dossier_json: dict[str, Any] | None = None
+    manual_notes: str | None = None
+    already_used: bool
+    created_at: datetime
+    updated_at: datetime
+
+
+class ResearchCasePatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: CaseStatus | None = None
+    manual_notes: str | None = None
+    already_used: bool | None = None
+    selected_primary_source_id: int | None = Field(default=None, ge=1)
