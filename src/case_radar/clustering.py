@@ -51,6 +51,10 @@ def _normalize_text(value: str | None) -> str:
     return " ".join(text.split())
 
 
+def _compact_text(value: str | None) -> str:
+    return re.sub(r"[^\wÀ-ÿ]+", "", (value or "").casefold())
+
+
 def _text_similarity(a: str, b: str) -> float:
     a_norm = _normalize_text(a)
     b_norm = _normalize_text(b)
@@ -78,9 +82,17 @@ def _has_contained_distinctive_title(a: str, b: str) -> bool:
     shorter, longer = (a_norm, b_norm) if len(a_norm) <= len(b_norm) else (b_norm, a_norm)
     if not _is_distinctive_title(shorter):
         return False
-    # Word-boundary padding avoids treating a distinctive title as a substring
-    # merely because it happens to occur inside a larger token.
-    return f" {shorter} " in f" {longer} "
+
+    if f" {shorter} " in f" {longer} ":
+        return True
+
+    # Search indexes occasionally concatenate neighboring titles without whitespace
+    # (for example "...InternetReal Footage..."). Only fall back to compact
+    # containment after the shorter title already passed the distinctive-title guard;
+    # this keeps short/generic phrases from collapsing unrelated cases.
+    shorter_compact = _compact_text(shorter)
+    longer_compact = _compact_text(longer)
+    return bool(shorter_compact and shorter_compact in longer_compact)
 
 
 def features_from_source(
