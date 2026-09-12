@@ -28,11 +28,9 @@ export default function CaseRadarPage() {
 
   useEffect(() => {
     refresh();
-    const timer = window.setInterval(() => {
-      if (runs.some((run) => run.status === "queued" || run.status === "running")) refresh();
-    }, 4000);
+    const timer = window.setInterval(refresh, 4000);
     return () => window.clearInterval(timer);
-  }, [refresh, runs]);
+  }, [refresh]);
 
   const onCreated = (run: CaseResearchRun) => setRuns((current) => [run, ...current.filter((item) => item.id !== run.id)]);
 
