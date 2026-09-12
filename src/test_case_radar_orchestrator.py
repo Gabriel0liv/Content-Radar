@@ -74,9 +74,10 @@ class RecordingOrchestrator(CaseRadarOrchestrator):
     def _collect_social_context(self, sources, request, cancel_check):
         self.calls.append("social")
 
-    def _cluster(self, run_id, sources):
+    def _cluster(self, run_id, sources, *, max_cases=None):
         self.calls.append("cluster")
-        return [SimpleNamespace(id=index + 1, status="ready") for index in range(self.case_count)]
+        count = self.case_count if max_cases is None else min(self.case_count, max_cases)
+        return [SimpleNamespace(id=index + 1, status="ready") for index in range(count)]
 
     def _research_cases(self, run_id, cases, provider_coverage):
         self.calls.append("research")
@@ -125,6 +126,16 @@ def test_orchestrator_runs_all_stages_and_returns_completed_result():
         "finalizing",
     ]
     assert result.summary["usable_cases"] == 2
+
+
+def test_orchestrator_caps_case_creation_to_requested_target():
+    repo = FakeRepo()
+    orchestrator = RecordingOrchestrator(repo, FakeRegistry(), case_count=8)
+
+    result = orchestrator.execute(_run(target=3))
+
+    assert result.summary["usable_cases"] == 3
+    assert result.summary["clustered_cases"] == 3
 
 
 def test_orchestrator_marks_partial_when_target_missed_but_has_useful_output():
