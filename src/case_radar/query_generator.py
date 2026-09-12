@@ -26,7 +26,7 @@ _LANGUAGE_PATTERNS: dict[str, dict[str, tuple[str, ...]]] = {
         "core": ("{theme}", "{theme} video case"),
         "source_hunt": ("{theme} original source", "{theme} earliest upload original post"),
         "context": ("{theme} context origin location date", "{theme} full story context"),
-        "debunk": ("{theme} debunk explanation fake staged", "{theme} analysis what happened"),
+        "debunk": ("{theme} debunk explanation fake hoax", "{theme} analysis what happened"),
         "local_language": ("{theme} mystery case", "{theme} strange footage"),
     },
     "es": {
@@ -70,7 +70,7 @@ def _patterns_for_language(language: str) -> dict[str, tuple[str, ...]]:
 def generate_queries(request: CaseResearchCreate) -> list[GeneratedQuery]:
     include_suffix = " ".join(request.include_terms).strip()
     result: list[GeneratedQuery] = []
-    seen: set[str] = set()
+    seen: set[tuple[str, str, str]] = set()
     variants_per_intent = _DEPTH_VARIANTS[request.research_depth]
     intents = _DEPTH_INTENTS[request.research_depth]
     include_applied = False
@@ -84,7 +84,7 @@ def generate_queries(request: CaseResearchCreate) -> list[GeneratedQuery]:
                 if include_suffix and not include_applied:
                     text = _normalize_query(f"{text} {include_suffix}")
                     include_applied = True
-                key = text.casefold()
+                key = (language, intent, text.casefold())
                 if not text or key in seen:
                     continue
                 seen.add(key)
