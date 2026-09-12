@@ -5,6 +5,7 @@ import time
 
 import src.db.base  # noqa: F401  # register all SQLAlchemy models before mapper configuration
 from src.case_radar.orchestrator import CaseRadarCancelled, CaseRadarOrchestrator
+from src.case_radar.orchestrator_social import SocialResearchOrchestrator
 from src.case_radar.providers.registry import build_default_registry
 from src.db.session import SessionLocal
 from src.repositories.case_radar import CaseRadarRepository
@@ -86,7 +87,7 @@ def main() -> None:
         db = SessionLocal()
         try:
             repo = CaseRadarRepository(db)
-            orchestrator = CaseRadarOrchestrator(repo, registry)
+            orchestrator = SocialResearchOrchestrator(repo, registry)
             worked = run_once(repo, orchestrator, worker_id, lease_seconds)
         finally:
             db.close()
