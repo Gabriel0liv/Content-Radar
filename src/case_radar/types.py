@@ -48,3 +48,44 @@ class Candidate(BaseModel):
     discovery_method: str = Field(min_length=1)
     raw_json: dict[str, Any] = Field(default_factory=dict)
     source_confidence: float = Field(ge=0, le=1)
+
+
+class CandidatePage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidates: list[Candidate] = Field(default_factory=list)
+    next_cursor: str | None = None
+    raw_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class SourceSnapshot(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate: Candidate
+    raw_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class SocialContextRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    platform_item_id: str | None = None
+    parent_id: str | None = None
+    depth: int = Field(default=0, ge=0)
+    author_handle: str | None = None
+    author_display_name: str | None = None
+    body: str
+    published_at: datetime | None = None
+    engagement: dict[str, int] = Field(default_factory=dict)
+    permalink: str | None = None
+    external_links: list[str] = Field(default_factory=list)
+    pinned: bool = False
+    author_reply: bool = False
+    raw_json: dict[str, Any] = Field(default_factory=dict)
+
+
+class SocialContextPage(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[SocialContextRecord] = Field(default_factory=list)
+    next_cursor: str | None = None
+    raw_json: dict[str, Any] = Field(default_factory=dict)
