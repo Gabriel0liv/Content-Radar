@@ -1,4 +1,8 @@
 import type {
+  CaseResearchCreatePayload,
+  CaseResearchQuery,
+  CaseResearchRun,
+  CaseResearchRunListResponse,
   ContentItem,
   ContentItemListResponse,
   ContentSummary,
@@ -7,6 +11,8 @@ import type {
   ReferenceImportJob,
   ReferenceSource,
   ReferenceSourceListResponse,
+  ResearchCase,
+  ResearchSource,
   SearchConfig,
   SearchRun,
   Transcript,
@@ -25,7 +31,8 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    throw new Error(body?.detail || `Erro HTTP ${response.status}`);
+    const detail = typeof body?.detail === "string" ? body.detail : body?.detail ? JSON.stringify(body.detail) : null;
+    throw new Error(detail || `Erro HTTP ${response.status}`);
   }
   if (response.status === 204) return undefined as T;
   return response.json();
@@ -120,4 +127,40 @@ export function rebuildDiscoveryTerms(): Promise<{ rebuilt: number }> {
 
 export function globalSearch(q: string, limit = 8): Promise<GlobalSearchResponse> {
   return request(`/global-search${queryString({ q, limit })}`);
+}
+
+export function createCaseResearchRun(payload: CaseResearchCreatePayload): Promise<CaseResearchRun> {
+  return request("/case-radar/runs", { method: "POST", body: JSON.stringify(payload) });
+}
+
+export function getCaseResearchRuns(params: { limit?: number; offset?: number } = {}): Promise<CaseResearchRunListResponse> {
+  return request(`/case-radar/runs${queryString(params)}`);
+}
+
+export function getCaseResearchRun(id: number): Promise<CaseResearchRun> {
+  return request(`/case-radar/runs/${id}`);
+}
+
+export function cancelCaseResearchRun(id: number): Promise<CaseResearchRun> {
+  return request(`/case-radar/runs/${id}/cancel`, { method: "POST" });
+}
+
+export function getCaseResearchQueries(id: number): Promise<CaseResearchQuery[]> {
+  return request(`/case-radar/runs/${id}/queries`);
+}
+
+export function getCaseResearchSources(id: number): Promise<ResearchSource[]> {
+  return request(`/case-radar/runs/${id}/sources`);
+}
+
+export function getResearchCases(id: number): Promise<ResearchCase[]> {
+  return request(`/case-radar/runs/${id}/cases`);
+}
+
+export function getResearchCase(id: number): Promise<ResearchCase> {
+  return request(`/case-radar/cases/${id}`);
+}
+
+export function updateResearchCase(id: number, payload: Partial<Pick<ResearchCase, "status" | "manual_notes" | "already_used" | "selected_primary_source_id">>): Promise<ResearchCase> {
+  return request(`/case-radar/cases/${id}`, { method: "PATCH", body: JSON.stringify(payload) });
 }

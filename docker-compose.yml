@@ -106,6 +106,43 @@ services:
       - content_radar_net
     restart: unless-stopped
 
+  case_worker:
+    build: .
+    container_name: dark_content_case_worker
+    command: python -m case_worker.worker
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://radar:radar@postgres:5432/dark_content_radar
+      - CASE_RADAR_WORKER_ID=${CASE_RADAR_WORKER_ID:-case-worker-1}
+      - CASE_RADAR_WORKER_POLL_SECONDS=${CASE_RADAR_WORKER_POLL_SECONDS:-2}
+      - CASE_RADAR_WORKER_LEASE_SECONDS=${CASE_RADAR_WORKER_LEASE_SECONDS:-180}
+      - CASE_RADAR_WEB_SEARCH_URL=${CASE_RADAR_WEB_SEARCH_URL:-}
+      - CASE_RADAR_WEB_SEARCH_API_KEY=${CASE_RADAR_WEB_SEARCH_API_KEY:-}
+      - CASE_RADAR_X_SESSION_FILE=${CASE_RADAR_X_SESSION_FILE:-}
+      - X_BEARER_TOKEN=${X_BEARER_TOKEN:-}
+      - CASE_RADAR_TIKTOK_SESSION_FILE=${CASE_RADAR_TIKTOK_SESSION_FILE:-}
+      - CASE_RADAR_TIKTOK_ADAPTER_MODULE=${CASE_RADAR_TIKTOK_ADAPTER_MODULE:-}
+      - CASE_RADAR_TIKTOK_OFFICIAL_SEARCH_URL=${CASE_RADAR_TIKTOK_OFFICIAL_SEARCH_URL:-}
+      - TIKTOK_ACCESS_TOKEN=${TIKTOK_ACCESS_TOKEN:-}
+      - CASE_RADAR_INSTAGRAM_SESSION_FILE=${CASE_RADAR_INSTAGRAM_SESSION_FILE:-}
+      - CASE_RADAR_INSTAGRAM_ADAPTER_MODULE=${CASE_RADAR_INSTAGRAM_ADAPTER_MODULE:-}
+      - INSTAGRAM_ACCESS_TOKEN=${INSTAGRAM_ACCESS_TOKEN:-}
+      - REDDIT_CLIENT_ID=${REDDIT_CLIENT_ID:-}
+      - REDDIT_CLIENT_SECRET=${REDDIT_CLIENT_SECRET:-}
+      - CASE_RADAR_REDDIT_USER_AGENT=${CASE_RADAR_REDDIT_USER_AGENT:-ContentRadar/1.0}
+      - YOUTUBE_API_KEY=${YOUTUBE_API_KEY:-}
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    networks:
+      - content_radar_net
+    restart: unless-stopped
+
   frontend:
     build: ./frontend
     container_name: dark_content_frontend

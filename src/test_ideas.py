@@ -1,16 +1,20 @@
 import src.db.base  # noqa: F401
 
+from fastapi.testclient import TestClient
+
 from src.api.main import app
 from src.schemas.ideas import ACTIVE_IDEA_STATUSES, IdeaCreate, IdeaRead, IdeaUpdate
 
 
 def test_active_api_exposes_ideas_but_not_workshop_children():
-    paths = {route.path for route in app.routes}
-    assert "/video-projects" in paths
-    assert "/video-projects/{id}" in paths
-    assert "/video-projects/{id}/items" not in paths
-    assert "/canva/oauth/start" not in paths
-    assert "/video-projects/{id}/external-boards" not in paths
+    client = TestClient(app)
+
+    ideas = client.get("/video-projects")
+    assert ideas.status_code == 200, ideas.text
+
+    assert client.get("/video-projects/999999/items").status_code == 404
+    assert client.get("/canva/oauth/start").status_code == 404
+    assert client.get("/video-projects/999999/external-boards").status_code == 404
 
 
 def test_active_idea_statuses_are_intentionally_small():
