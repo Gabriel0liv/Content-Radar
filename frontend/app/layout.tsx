@@ -4,15 +4,11 @@ import { Toaster } from "sonner";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Dark Content Radar - Painel de Curadoria",
-  description: "Sistema inteligente de triagem e análise de oportunidades de conteúdo.",
+  title: "Content Radar",
+  description: "Encontre conteúdos, guarde referências e transcrições e organize ideias de vídeo.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="pt-BR" className="dark">
       <body className="font-sans">

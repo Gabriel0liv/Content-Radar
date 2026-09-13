@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from src.api.routes import canva_oauth, content_items, external_boards, health, ingest, references, search, video_workshop
+
+from src.api.routes import case_radar, content_items, discovery_terms, global_search, health, ideas, ingest, references, search, speech, speech_jobs
 
 app = FastAPI(
-    title="Dark Content Radar API",
-    description="Backend API to manage curated content items from n8n & other collectors",
-    version="1.0.0"
+    title="Content Radar API",
+    description="Backend for content discovery, transcript references and lightweight video ideas",
+    version="1.5.0",
 )
 
 app.add_middleware(
@@ -19,15 +20,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Register route paths
 app.include_router(health.router, tags=["Health"])
 app.include_router(content_items.router, prefix="/content-items", tags=["Content Items"])
 app.include_router(ingest.router, prefix="/ingest", tags=["Ingestion"])
 app.include_router(search.configs_router, prefix="/search-configs", tags=["Search Configurations"])
 app.include_router(search.runs_router, prefix="/search-runs", tags=["Search Runs"])
+app.include_router(discovery_terms.router, prefix="/discovery-terms", tags=["Discovery Terms"])
+app.include_router(global_search.router, prefix="/global-search", tags=["Global Search"])
 app.include_router(references.reference_sources_router, prefix="/reference-sources", tags=["Reference Sources"])
 app.include_router(references.reference_import_jobs_router, prefix="/reference-import-jobs", tags=["Reference Import Jobs"])
 app.include_router(references.transcripts_router, prefix="/transcripts", tags=["Transcripts"])
-app.include_router(video_workshop.router, tags=["Video Workshop"])
-app.include_router(external_boards.router, tags=["External Boards"])
-app.include_router(canva_oauth.router, tags=["Canva OAuth"])
+app.include_router(ideas.router, tags=["Ideas"])
+app.include_router(speech.router, prefix="/speech", tags=["Speech"])
+app.include_router(speech_jobs.router, prefix="/speech", tags=["Speech Jobs"])
+app.include_router(case_radar.router, prefix="/case-radar", tags=["Case Radar"])

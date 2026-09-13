@@ -3,7 +3,22 @@ from src.db.session import Base
 from src.models.content_item import ContentItem, ContentItemEvent  # noqa
 from src.models.search import SearchConfig, SearchRun  # noqa
 from src.models.reference import ReferenceSource, ReferenceImportJob, Transcript, TranscriptSegment  # noqa
+from src.models.topic import Topic, ContentItemTopic  # noqa
+from src.models.channel_profile import ChannelProfile  # noqa
+from src.models.discovery_term import DiscoveryTerm  # noqa
 from src.models.canva_oauth import CanvaOAuthState, CanvaOAuthToken  # noqa
+from src.models.speech import SpeechArtifact, SpeechJob, SpeechPreset, SpeechSpeakerMapping, SpeechWorkerState  # noqa
+from src.models.case_radar import (  # noqa
+    CaseResearchRun,
+    CaseResearchQuery,
+    ResearchSource,
+    ResearchCase,
+    CaseSource,
+    SocialContextItem,
+    CaseClaim,
+    CaseEvidence,
+    MediaFingerprint,
+)
 from src.models.video_workshop import (
     VideoProject,
     VideoProjectNote,

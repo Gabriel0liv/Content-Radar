@@ -1,6 +1,15 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
 from typing import Optional, Dict, Any, Literal, List
+
+
+class DetectedTopic(BaseModel):
+    id: int
+    name: str
+    type: str
+    confidence: float
+    source: str
+
 
 class ContentItemBase(BaseModel):
     source: str
@@ -10,6 +19,15 @@ class ContentItemBase(BaseModel):
     description: Optional[str] = None
     url: str
     channel_title: Optional[str] = None
+    channel_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+    youtube_category_id: Optional[str] = None
+    youtube_category_name: Optional[str] = None
+    youtube_tags_json: List[str] = Field(default_factory=list)
+    youtube_topics_json: List[str] = Field(default_factory=list)
+    topic_classification_version: Optional[str] = None
+    performance_ratio: Optional[float] = None
+    performance_baseline_samples: int = 0
     published_at: Optional[datetime] = None
     views: Optional[int] = 0
     likes: Optional[int] = 0
@@ -25,16 +43,9 @@ class ContentItemBase(BaseModel):
     search_run_id: Optional[int] = None
 
 class ContentItemCreate(ContentItemBase):
-    """
-    Schema for content creation/ingestion.
-    Blocks the client (n8n) from defining curation status or notes.
-    """
     pass
 
 class ContentItemIngest(ContentItemCreate):
-    """
-    Alias for content ingestion.
-    """
     pass
 
 class ContentItemUpdate(BaseModel):
@@ -42,6 +53,15 @@ class ContentItemUpdate(BaseModel):
     description: Optional[str] = None
     url: Optional[str] = None
     channel_title: Optional[str] = None
+    channel_id: Optional[str] = None
+    youtube_video_id: Optional[str] = None
+    youtube_category_id: Optional[str] = None
+    youtube_category_name: Optional[str] = None
+    youtube_tags_json: Optional[List[str]] = None
+    youtube_topics_json: Optional[List[str]] = None
+    topic_classification_version: Optional[str] = None
+    performance_ratio: Optional[float] = None
+    performance_baseline_samples: Optional[int] = None
     views: Optional[int] = None
     likes: Optional[int] = None
     comments: Optional[int] = None
@@ -72,11 +92,11 @@ class ContentItemRead(ContentItemBase):
     production_notes: Optional[str] = None
     collected_at: datetime
     last_seen_at: datetime
+    detected_topics: List[DetectedTopic] = Field(default_factory=list)
 
     class Config:
         from_attributes = True
 
-# Alias for backward compatibility
 ContentItem = ContentItemRead
 
 class ContentItemListResponse(BaseModel):

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Text, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Index
+from sqlalchemy import Column, BigInteger, Text, Float, DateTime, ForeignKey, UniqueConstraint, CheckConstraint, Index, Integer
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
@@ -15,6 +15,15 @@ class ContentItem(Base):
     description = Column(Text, nullable=True)
     url = Column(Text, nullable=False)
     channel_title = Column(Text, nullable=True)
+    channel_id = Column(Text, nullable=True)
+    youtube_video_id = Column(Text, nullable=True)
+    youtube_category_id = Column(Text, nullable=True)
+    youtube_category_name = Column(Text, nullable=True)
+    youtube_tags_json = Column(JSONB, nullable=True, server_default='[]')
+    youtube_topics_json = Column(JSONB, nullable=True, server_default='[]')
+    topic_classification_version = Column(Text, nullable=True)
+    performance_ratio = Column(Float, nullable=True)
+    performance_baseline_samples = Column(Integer, nullable=False, server_default="0")
     published_at = Column(DateTime(timezone=True), nullable=True)
     collected_at = Column(DateTime(timezone=True), server_default=func.now())
     last_seen_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -34,30 +43,48 @@ class ContentItem(Base):
     selected_at = Column(DateTime(timezone=True), nullable=True)
     rejected_reason = Column(Text, nullable=True)
     production_notes = Column(Text, nullable=True)
-    
-    # Search configurations and runs mapping
     search_config_id = Column(BigInteger, ForeignKey("search_configs.id", ondelete="SET NULL"), nullable=True)
     search_run_id = Column(BigInteger, ForeignKey("search_runs.id", ondelete="SET NULL"), nullable=True)
 
     __table_args__ = (
         UniqueConstraint("source", "external_id", name="unique_source_external_id"),
-        CheckConstraint(
-            "status IN ('new', 'reviewed', 'selected', 'rejected', 'produced', 'archived')",
-            name="check_content_items_status"
-        ),
+        CheckConstraint("status IN ('new', 'reviewed', 'selected', 'rejected', 'produced', 'archived')", name="check_content_items_status"),
         Index("idx_content_items_score_desc", score.desc()),
+        Index("idx_content_items_performance_ratio_desc", performance_ratio.desc()),
         Index("idx_content_items_published_at_desc", published_at.desc()),
         Index("idx_content_items_status", status),
         Index("idx_content_items_source_external_id", source, external_id),
         Index("idx_content_items_content_type", content_type),
         Index("idx_content_items_topic_seed", topic_seed),
+        Index("idx_content_items_channel_id", channel_id),
+        Index("idx_content_items_youtube_video_id", youtube_video_id),
+        Index("idx_content_items_youtube_category_id", youtube_category_id),
         Index("idx_content_items_search_config_id", search_config_id),
         Index("idx_content_items_search_run_id", search_run_id),
     )
 
     events = relationship("ContentItemEvent", back_populates="content_item", cascade="all, delete-orphan")
+    topic_associations = relationship("ContentItemTopic", back_populates="content_item", cascade="all, delete-orphan")
     search_config = relationship("SearchConfig", back_populates="content_items")
     search_run = relationship("SearchRun", back_populates="content_items")
+
+    @property
+    def detected_topics(self):
+        associations = sorted(
+            list(self.topic_associations or []),
+            key=lambda association: (-(float(association.confidence or 0.0)), association.topic.name if association.topic else ""),
+        )
+        return [
+            {
+                "id": association.topic.id,
+                "name": association.topic.name,
+                "type": association.topic.type,
+                "confidence": float(association.confidence or 0.0),
+                "source": association.source,
+            }
+            for association in associations
+            if association.topic is not None
+        ]
 
 
 class ContentItemEvent(Base):
@@ -69,8 +96,5 @@ class ContentItemEvent(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     data = Column(JSONB, nullable=True)
 
-    __table_args__ = (
-        Index("idx_content_item_events_content_item_id", content_item_id),
-    )
-
+    __table_args__ = (Index("idx_content_item_events_content_item_id", content_item_id),)
     content_item = relationship("ContentItem", back_populates="events")

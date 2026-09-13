@@ -19,6 +19,14 @@ fastapi
 uvicorn[standard]
 alembic
 pydantic-settings
+python-multipart
 yt-dlp
 httpx
 
+# Case Radar free web discovery + authenticated social sessions
+ddgs
+twikit
+instagrapi
+
+# Existing lightweight audio transcription path
+faster-whisper

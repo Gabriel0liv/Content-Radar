@@ -9,9 +9,36 @@ from src.schemas.search import (
     SearchConfigCreate,
     SearchConfigUpdate,
     SearchRunCompletePayload,
-    SearchRunFailPayload
+    SearchRunFailPayload,
 )
 from src.models.search import SearchConfig, SearchRun
+
+
+def content_matches_structured_search(item, topic_rows, config) -> bool:
+    minimum_topic_confidence = getattr(config, "minimum_topic_confidence", None)
+    if minimum_topic_confidence is None:
+        minimum_topic_confidence = 0.0
+
+    qualified_topic_ids = {
+        int(row.topic_id)
+        for row in topic_rows
+        if float(getattr(row, "confidence", 0.0) or 0.0) >= float(minimum_topic_confidence)
+    }
+    included = {int(value) for value in (getattr(config, "included_topic_ids", None) or [])}
+    excluded = {int(value) for value in (getattr(config, "excluded_topic_ids", None) or [])}
+
+    if excluded & qualified_topic_ids:
+        return False
+    if included and not (included & qualified_topic_ids):
+        return False
+
+    minimum_ratio = getattr(config, "minimum_performance_ratio", None)
+    if minimum_ratio is not None:
+        ratio = getattr(item, "performance_ratio", None)
+        if ratio is None or float(ratio) < float(minimum_ratio):
+            return False
+    return True
+
 
 class SearchService:
     def __init__(self, db: Session):
@@ -40,20 +67,13 @@ class SearchService:
         if config.status != "active":
             raise ValueError("Apenas configurações com status 'active' podem ser executadas.")
 
-        # Create search_run with status queued and trigger_source manual
         run = self.repo.create_run(config_id, trigger_source="manual")
-
         webhook_url = os.getenv("N8N_SEARCH_WEBHOOK_URL")
         if webhook_url:
-            # Register background task for non-blocking execution
             background_tasks.add_task(self.send_webhook_background, run.id, config_id, webhook_url)
-        
         return run
 
     def send_webhook_background(self, run_id: int, config_id: int, webhook_url: str):
-        """
-        Sends the webhook request in a background task using an isolated database session.
-        """
         from src.db.session import SessionLocal
         db = SessionLocal()
         try:
@@ -61,18 +81,12 @@ class SearchService:
             run = repo.get_run_by_id(run_id)
             if not run:
                 return
-
-            payload = {
-                "search_config_id": config_id,
-                "search_run_id": run_id
-            }
-
+            payload = {"search_config_id": config_id, "search_run_id": run_id}
             try:
                 response = requests.post(webhook_url, json=payload, timeout=5)
                 if not response.ok:
                     raise Exception(f"HTTP {response.status_code}: {response.text}")
             except Exception as e:
-                # Update status of run to failed and store the error message
                 run.status = "failed"
                 run.finished_at = datetime.now(timezone.utc)
                 run.error_message = f"Falha ao chamar o webhook do n8n: {str(e)}"
