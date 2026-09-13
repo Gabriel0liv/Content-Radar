@@ -1,9 +1,9 @@
-name: Case Radar CI
+name: Content Radar CI
 
 on:
   push:
     branches:
-      - agent/case-radar-implementation
+      - master
   pull_request:
 
 jobs:
