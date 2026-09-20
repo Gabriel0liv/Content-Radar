@@ -7,9 +7,13 @@ from src.case_radar.orchestrator import CaseRadarCancelled, OrchestratorResult
 class FakeDb:
     def __init__(self):
         self.commits = 0
+        self.rollbacks = 0
 
     def commit(self):
         self.commits += 1
+
+    def rollback(self):
+        self.rollbacks += 1
 
 
 class FakeRepo:
@@ -127,5 +131,6 @@ def test_run_once_does_not_persist_raw_unexpected_exception_message():
     repo = FakeRepo(_run())
     orchestrator = FakeOrchestrator(error=RuntimeError("token=super-secret"))
     run_once(repo, orchestrator, "worker", 180)
+    assert repo.db.rollbacks == 1
     assert repo.failed[0] == "case_worker_error"
     assert "super-secret" not in repo.failed[1]
