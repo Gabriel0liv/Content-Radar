@@ -66,6 +66,7 @@ def run_once(
             current.lease_expires_at = None
             repo.db.commit()
     except Exception as exc:
+        repo.db.rollback()
         current = repo.get_run(run.id)
         if current is not None and current.status == "running" and current.worker_id == worker_id:
             repo.fail(
