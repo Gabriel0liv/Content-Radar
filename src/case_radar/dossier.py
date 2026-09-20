@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, datetime
 from typing import Any, Callable, Iterable
 
 
@@ -24,6 +25,16 @@ def _get(value: Any, name: str, default=None):
     if isinstance(value, dict):
         return value.get(name, default)
     return getattr(value, name, default)
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return [_json_safe(item) for item in value]
+    return value
 
 
 def _source_payload(source: Any) -> dict[str, Any]:
@@ -210,6 +221,7 @@ def build_factual_dossier(
         "provider_coverage": provider_coverage or {},
         "dossier_version": int(_get(case, "dossier_version", 1) or 1),
     }
+    dossier = _json_safe(dossier)
     validate_dossier_evidence(dossier, valid_evidence_ids)
     return dossier
 
