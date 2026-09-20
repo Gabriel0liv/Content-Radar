@@ -1,5 +1,7 @@
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
+import json
 import pytest
 
 from src.case_radar.dossier import DossierValidationError, build_dossier, build_factual_dossier
@@ -149,3 +151,34 @@ def test_summarizer_failure_falls_back_to_factual_dossier():
         summarizer=broken,
     )
     assert dossier["title"] == "Caso da floresta"
+
+
+def test_dossier_is_json_serializable_when_dates_are_datetimes():
+    published = datetime(2025, 8, 29, 21, 30, tzinfo=timezone.utc)
+    source = _source()
+    source.published_at = published
+    social = SimpleNamespace(
+        id=55,
+        source_id=source.id,
+        body="comentário",
+        author_handle="@viewer",
+        published_at=published,
+        usefulness_score=5.0,
+        categories_json=["context"],
+        urls_json=[],
+    )
+
+    dossier = build_factual_dossier(
+        _case(earliest_known_date=published, alleged_date=published),
+        sources=[source],
+        claims=[],
+        evidence=[],
+        social_context=[social],
+        provider_coverage={"web": {"checked_at": published}},
+    )
+
+    encoded = json.dumps(dossier)
+    assert "2025-08-29T21:30:00+00:00" in encoded
+    assert dossier["earliest_known_date"] == published.isoformat()
+    assert dossier["sources"][0]["published_at"] == published.isoformat()
+    assert dossier["useful_social_context"][0]["published_at"] == published.isoformat()
