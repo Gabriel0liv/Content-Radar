@@ -33,6 +33,22 @@ class SpeechSttJobCreate(BaseModel):
         return self
 
 
+class SpeechTtsJobCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=200_000)
+    engine: Literal["kokoro", "piper"]
+    voice: str = Field(min_length=1, max_length=200)
+    output_format: Literal["wav", "mp3"] = "wav"
+    speed: float = Field(default=1.0, gt=0, le=3.0)
+    language: str = Field(default="pt-br", min_length=2, max_length=32)
+    normalize_ptbr: bool = False
+    analyze_ptbr: bool = False
+    preset: str | None = Field(default=None, min_length=1, max_length=200)
+    preview: bool = False
+    preview_chars: int = Field(default=300, ge=10, le=2000)
+
+
 class SpeechJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -46,9 +62,11 @@ class SpeechJobRead(BaseModel):
     resolved_config_json: dict[str, Any] | None = None
     reference_source_id: int | None = None
     transcript_id: int | None = None
+    retry_of_job_id: int | None = None
     worker_id: str | None = None
     error_code: str | None = None
     error_message: str | None = None
+    archived_at: datetime | None = None
     created_at: datetime
     started_at: datetime | None = None
     finished_at: datetime | None = None
