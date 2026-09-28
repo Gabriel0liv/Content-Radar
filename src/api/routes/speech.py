@@ -17,6 +17,7 @@ from src.services.speech_presets_service import (
     SpeechPresetsService,
 )
 from src.services.speech_settings_service import InvalidSpeechSettingsError, SpeechSettingsService
+from speech_worker.tts.ptbr_text import analyze_ptbr_text
 
 
 router = APIRouter()
@@ -35,6 +36,12 @@ class SpeechPresetUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     config: dict[str, Any] | None = None
     description: str | None = Field(default=None, max_length=2000)
+
+
+class SpeechTtsAnalyzeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    text: str = Field(min_length=1, max_length=200_000)
+    language: str = Field(default="pt-br", min_length=2, max_length=32)
 
 
 class SpeechSettingsUpdateRequest(BaseModel):
@@ -70,8 +77,6 @@ def _preset_error(exc: Exception) -> HTTPException:
 
 @router.get("/stt/presets")
 def get_stt_presets():
-    # Kept for compatibility with the existing STT client until the unified
-    # /audio client switches to /speech/presets.
     return {"presets": list_builtin_stt_presets()}
 
 
@@ -79,6 +84,15 @@ def get_stt_presets():
 def resolve_stt(options: SpeechSttOptions):
     resolved = resolve_stt_config(options)
     return {"options": options, "resolved": resolved}
+
+
+@router.post("/tts/analyze-text")
+def analyze_tts_text(request: SpeechTtsAnalyzeRequest):
+    return {
+        "success": True,
+        "language": request.language,
+        "analysis": analyze_ptbr_text(request.text),
+    }
 
 
 @router.get("/presets")
@@ -90,10 +104,7 @@ def list_presets(
 
 
 @router.post("/presets", status_code=status.HTTP_201_CREATED)
-def create_preset(
-    request: SpeechPresetCreateRequest,
-    service: SpeechPresetsService = Depends(_presets_service),
-):
+def create_preset(request: SpeechPresetCreateRequest, service: SpeechPresetsService = Depends(_presets_service)):
     try:
         return service.create_preset(request.name, request.operation, request.config, request.description)
     except SpeechPresetError as exc:
@@ -101,11 +112,7 @@ def create_preset(
 
 
 @router.patch("/presets/{preset_id}")
-def update_preset(
-    preset_id: int,
-    request: SpeechPresetUpdateRequest,
-    service: SpeechPresetsService = Depends(_presets_service),
-):
+def update_preset(preset_id: int, request: SpeechPresetUpdateRequest, service: SpeechPresetsService = Depends(_presets_service)):
     try:
         return service.update_preset(
             preset_id,
