@@ -198,6 +198,73 @@ def test_upload_stt_job_returns_400_for_unsupported_media_extension():
     assert response.status_code == 400
 
 
+def test_create_tts_job_persists_durable_request():
+    captured = {}
+
+    class FakeService:
+        def create_tts_job(self, request):
+            captured["request"] = request
+            return _job(
+                operation="tts",
+                requested_config_json=request.model_dump(exclude_none=True),
+                resolved_config_json={"engine": request.engine, "voice": request.voice},
+            )
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/tts",
+            json={
+                "text": "Olá mundo",
+                "engine": "kokoro",
+                "voice": "pt_br_dora",
+                "output_format": "wav",
+                "speed": 1.05,
+                "normalize_ptbr": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 201
+    assert response.json()["operation"] == "tts"
+    assert captured["request"].preview is False
+    assert captured["request"].voice == "pt_br_dora"
+
+
+def test_tts_preview_endpoint_forces_preview_mode():
+    captured = {}
+
+    class FakeService:
+        def create_tts_job(self, request):
+            captured["request"] = request
+            return _job(
+                operation="tts",
+                requested_config_json=request.model_dump(exclude_none=True),
+                resolved_config_json={"engine": request.engine, "voice": request.voice, "preview": request.preview},
+            )
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/tts/preview",
+            json={"text": "Teste", "engine": "piper", "voice": "pt_br_faber", "preview": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 201
+    assert captured["request"].preview is True
+
+
+def test_tts_analysis_is_synchronous_and_advisory():
+    response = client.post("/speech/tts/analyze-text", json={"text": "Ola voce"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["analysis"]["original_text"] == "Ola voce"
+    assert body["analysis"]["normalized_text"] == "Ola voce"
+    assert body["analysis"]["has_issues"] is True
+
+
 def test_cancel_queued_job():
     class FakeService:
         def cancel_job(self, job_id):
