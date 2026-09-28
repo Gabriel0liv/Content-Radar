@@ -5,6 +5,9 @@ from typing import Iterable
 from uuid import uuid4
 
 
+SUPPORTED_INPUT_EXTENSIONS = {".mp3", ".wav", ".mp4", ".mkv", ".mov", ".m4a", ".webm"}
+
+
 class SpeechStorage:
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root).resolve()
@@ -15,6 +18,13 @@ class SpeechStorage:
         if not filename or Path(filename).name != filename or "/" in filename or "\\" in filename:
             raise ValueError("Nome de arquivo inválido")
         return filename
+
+    @classmethod
+    def _validate_input_filename(cls, filename: str) -> str:
+        safe_name = cls._validate_filename(filename)
+        if Path(safe_name).suffix.lower() not in SUPPORTED_INPUT_EXTENSIONS:
+            raise ValueError("Formato de entrada não suportado")
+        return safe_name
 
     def job_dir(self, job_id: int) -> Path:
         path = self.root / "jobs" / str(job_id)
@@ -50,26 +60,38 @@ class SpeechStorage:
         return self.artifacts_dir(job_id) / self._validate_filename(filename)
 
     def save_input(self, job_id: int, filename: str, chunks: Iterable[bytes]) -> Path:
-        safe_name = self._validate_filename(filename)
+        safe_name = self._validate_input_filename(filename)
         destination = self.input_dir(job_id) / safe_name
-        self._write_chunks(destination, chunks)
+        self._write_chunks(destination, chunks, require_nonempty=True)
         return destination
 
     def stage_input(self, filename: str, chunks: Iterable[bytes]) -> Path:
-        safe_name = self._validate_filename(filename)
+        safe_name = self._validate_input_filename(filename)
         directory = self.staged_inputs_dir() / uuid4().hex
         directory.mkdir(parents=True, exist_ok=False)
         destination = directory / safe_name
-        self._write_chunks(destination, chunks)
+        try:
+            self._write_chunks(destination, chunks, require_nonempty=True)
+        except Exception:
+            destination.unlink(missing_ok=True)
+            try:
+                directory.rmdir()
+            except OSError:
+                pass
+            raise
         return destination
 
     @staticmethod
-    def _write_chunks(destination: Path, chunks: Iterable[bytes]) -> None:
+    def _write_chunks(destination: Path, chunks: Iterable[bytes], *, require_nonempty: bool = False) -> None:
+        written = 0
         try:
             with destination.open("wb") as handle:
                 for chunk in chunks:
                     if chunk:
                         handle.write(chunk)
+                        written += len(chunk)
+            if require_nonempty and written == 0:
+                raise ValueError("Arquivo de entrada vazio")
         except Exception:
             destination.unlink(missing_ok=True)
             try:
