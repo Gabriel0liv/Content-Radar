@@ -8,9 +8,10 @@ from sqlalchemy.orm import Session
 
 from src.models.reference import ReferenceSource
 from src.repositories.speech_jobs import SpeechJobRepository
-from src.schemas.speech_jobs import SpeechSttJobCreate
+from src.schemas.speech_jobs import SpeechSttJobCreate, SpeechTtsJobCreate
 from src.services.speech_presets_service import SpeechPresetsService
 from src.services.speech_storage import SpeechStorage
+from speech_worker.tts.ptbr_text import analyze_ptbr_text, normalize_ptbr_text
 
 
 class SpeechReferenceNotFoundError(ValueError):
@@ -28,7 +29,7 @@ class SpeechJobsService:
         if reference_source_id is not None and self.db.get(ReferenceSource, reference_source_id) is None:
             raise SpeechReferenceNotFoundError("Referência não encontrada")
 
-    def _resolve_request(self, request: SpeechSttJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
+    def _resolve_stt_request(self, request: SpeechSttJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
         requested = request.model_dump(exclude_none=True)
         base = self.presets.resolve_stt_preset(request.preset)
         resolved: dict[str, Any] = {
@@ -50,21 +51,15 @@ class SpeechJobsService:
             "cache_dir": base.get("cache_dir") or os.getenv("HF_HOME"),
             "export_formats": list(base.get("export_formats") or ["txt", "json", "srt", "vtt"]),
         }
-
-        # Guided controls are authoritative over a preset.
         resolved["language"] = request.language if request.language is not None else resolved["language"]
         resolved["no_diarization"] = not request.diarization
         resolved["num_speakers"] = request.num_speakers
         resolved["min_speakers"] = None if request.num_speakers is not None else request.min_speakers
         resolved["max_speakers"] = None if request.num_speakers is not None else request.max_speakers
         resolved["initial_prompt"] = request.initial_prompt if request.initial_prompt is not None else resolved["initial_prompt"]
-
-        # Sensitive speech is a convenience preset, but explicit advanced VAD
-        # values always win.
         if request.quiet_speech:
             resolved["vad_onset"] = 0.1
             resolved["vad_offset"] = 0.1
-
         overrides = {
             "model": request.model,
             "device": request.device,
@@ -81,15 +76,42 @@ class SpeechJobsService:
         for key, value in overrides.items():
             if value is not None:
                 resolved[key] = value
-
-        # Worker config still consumes a space-delimited legacy field while
-        # API/read models expose the normalized list.
         resolved["formats"] = " ".join(resolved["export_formats"])
+        return requested, resolved
+
+    def _resolve_tts_request(self, request: SpeechTtsJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
+        requested = request.model_dump(exclude_none=True)
+        base: dict[str, Any] = {}
+        if request.preset:
+            base = self.presets.resolve_tts_preset(request.preset)
+        resolved = {
+            "engine": request.engine or base.get("engine", "kokoro"),
+            "voice": request.voice or base.get("voice", "pt_br_dora"),
+            "output_format": request.output_format or base.get("output_format", "wav"),
+            "speed": request.speed if request.speed is not None else float(base.get("speed", 1.0)),
+            "language": request.language or base.get("language", "pt-br"),
+            "normalize_ptbr": bool(request.normalize_ptbr),
+            "analyze_ptbr": bool(request.analyze_ptbr),
+            "preview": bool(request.preview),
+            "preview_chars": int(request.preview_chars),
+            "device": str(base.get("device") or os.getenv("SPEECH_TTS_DEVICE", "cpu")),
+            "cache_dir": base.get("cache_dir") or os.getenv("SPEECH_TTS_CACHE"),
+            "offline": bool(base.get("offline", False)),
+            "chunk_chars": int(base.get("chunk_chars", 400)),
+        }
+        effective = request.text
+        if resolved["normalize_ptbr"]:
+            effective = normalize_ptbr_text(effective)
+        if resolved["preview"]:
+            effective = effective[: resolved["preview_chars"]].rstrip()
+        resolved["effective_text"] = effective
+        if resolved["analyze_ptbr"]:
+            resolved["analysis"] = analyze_ptbr_text(request.text)
         return requested, resolved
 
     def create_stt_job(self, request: SpeechSttJobCreate):
         self._validate_reference(request.reference_source_id)
-        requested, resolved = self._resolve_request(request)
+        requested, resolved = self._resolve_stt_request(request)
         return self.repo.create(
             operation="stt",
             requested_config_json=requested,
@@ -98,15 +120,9 @@ class SpeechJobsService:
             reference_source_id=request.reference_source_id,
         )
 
-    def create_uploaded_stt_job(
-        self,
-        request: SpeechSttJobCreate,
-        *,
-        filename: str,
-        chunks: Iterable[bytes],
-    ):
+    def create_uploaded_stt_job(self, request: SpeechSttJobCreate, *, filename: str, chunks: Iterable[bytes]):
         self._validate_reference(request.reference_source_id)
-        requested, resolved = self._resolve_request(request)
+        requested, resolved = self._resolve_stt_request(request)
         staged_path = self.storage.stage_input(filename, chunks)
         try:
             return self.repo.create(
@@ -124,17 +140,23 @@ class SpeechJobsService:
                 pass
             raise
 
+    def create_tts_job(self, request: SpeechTtsJobCreate):
+        requested, resolved = self._resolve_tts_request(request)
+        return self.repo.create(
+            operation="tts",
+            requested_config_json=requested,
+            resolved_config_json=resolved,
+            input_path=None,
+            reference_source_id=None,
+        )
+
+    def analyze_tts_text(self, text: str) -> dict[str, Any]:
+        return analyze_ptbr_text(text)
+
     def get_job(self, job_id: int):
         return self.repo.get(job_id)
 
-    def list_jobs(
-        self,
-        limit: int = 50,
-        *,
-        operation: str | None = None,
-        status: str | None = None,
-        include_archived: bool = False,
-    ):
+    def list_jobs(self, limit: int = 50, *, operation: str | None = None, status: str | None = None, include_archived: bool = False):
         return self.repo.list_recent(
             limit=max(1, min(200, limit)),
             operation=operation,
