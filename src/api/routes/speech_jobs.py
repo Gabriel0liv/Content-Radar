@@ -7,7 +7,7 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
-from src.schemas.speech_jobs import SpeechJobRead, SpeechStatusRead, SpeechSttJobCreate
+from src.schemas.speech_jobs import SpeechJobRead, SpeechStatusRead, SpeechSttJobCreate, SpeechTtsJobCreate
 from src.services.speech_jobs_service import SpeechJobsService, SpeechReferenceNotFoundError
 
 
@@ -33,14 +33,8 @@ def _parse_export_formats(raw: str | None) -> list[str] | None:
 
 
 @router.post("/jobs/stt", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
-def create_stt_job(
-    request: SpeechSttJobCreate,
-    service: SpeechJobsService = Depends(get_speech_jobs_service),
-):
-    raise HTTPException(
-        status_code=400,
-        detail="STT manual exige um arquivo. Use /speech/jobs/stt/upload.",
-    )
+def create_stt_job(request: SpeechSttJobCreate, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    raise HTTPException(status_code=400, detail="STT manual exige um arquivo. Use /speech/jobs/stt/upload.")
 
 
 @router.post("/jobs/stt/upload", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
@@ -95,15 +89,26 @@ def upload_stt_job(
         )
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_context=False)) from exc
-
     try:
-        return service.create_uploaded_stt_job(
-            request,
-            filename=file.filename,
-            chunks=_upload_chunks(file),
-        )
+        return service.create_uploaded_stt_job(request, filename=file.filename, chunks=_upload_chunks(file))
     except SpeechReferenceNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/jobs/tts", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
+def create_tts_job(request: SpeechTtsJobCreate, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        return service.create_tts_job(request.model_copy(update={"preview": False}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/jobs/tts/preview", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
+def create_tts_preview_job(request: SpeechTtsJobCreate, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        return service.create_tts_job(request.model_copy(update={"preview": True}))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
