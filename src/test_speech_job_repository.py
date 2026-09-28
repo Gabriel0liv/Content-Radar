@@ -7,15 +7,19 @@ from src.repositories.speech_jobs import SpeechJobOwnershipError, SpeechJobRepos
 
 
 class ScalarResult:
-    def __init__(self, one=None, many=None):
+    def __init__(self, one=None, many=None, rows=None):
         self.one = one
         self.many = many or ([] if one is None else [one])
+        self.rows = rows or []
 
     def scalar_one_or_none(self):
         return self.one
 
     def scalars(self):
         return iter(self.many)
+
+    def all(self):
+        return list(self.rows)
 
 
 class FakeSession:
@@ -25,6 +29,7 @@ class FakeSession:
         self.last_stmt = None
         self.commits = 0
         self.rollbacks = 0
+        self.added = []
 
     def execute(self, stmt):
         self.last_stmt = stmt
@@ -43,13 +48,14 @@ class FakeSession:
         return None
 
     def add(self, obj):
+        self.added.append(obj)
         self.jobs[getattr(obj, "id", len(self.jobs) + 1)] = obj
 
 
-def _queued_job(job_id=1):
+def _queued_job(job_id=1, operation="stt"):
     return SimpleNamespace(
         id=job_id,
-        operation="stt",
+        operation=operation,
         status="queued",
         stage="queued",
         progress_percent=0,
@@ -62,6 +68,12 @@ def _queued_job(job_id=1):
         result_json=None,
         error_code=None,
         error_message=None,
+        archived_at=None,
+        retry_of_job_id=None,
+        requested_config_json={"preset": "balanced"},
+        resolved_config_json={"model": "medium"},
+        input_path="data/speech/input.wav",
+        reference_source_id=None,
     )
 
 
@@ -117,3 +129,59 @@ def test_cancel_queued_job_becomes_cancelled():
     updated = repo.request_cancel(1)
     assert updated.status == "cancelled"
     assert updated.cancel_requested_at is not None
+
+
+def test_list_recent_filters_by_operation_status_and_excludes_archived_by_default():
+    repo = SpeechJobRepository(FakeSession(result=ScalarResult(many=[])))
+    repo.list_recent(limit=25, operation="tts", status="completed")
+    sql = str(repo.db.last_stmt)
+    assert "speech_jobs.operation" in sql
+    assert "speech_jobs.status" in sql
+    assert "speech_jobs.archived_at IS NULL" in sql
+
+
+def test_archive_marks_job_without_deleting_transcript_or_artifacts():
+    job = _queued_job()
+    job.status = "completed"
+    job.transcript_id = 42
+    session = FakeSession(jobs={1: job})
+    repo = SpeechJobRepository(session)
+    archived = repo.archive(1)
+    assert archived.archived_at is not None
+    assert archived.transcript_id == 42
+    assert 1 in session.jobs
+
+
+def test_retry_creates_new_job_with_source_metadata_and_keeps_original():
+    original = _queued_job(operation="tts")
+    original.status = "failed"
+    original.input_path = None
+    original.requested_config_json = {"text": "Olá", "voice": "pt_br_dora"}
+    original.resolved_config_json = {"engine": "kokoro"}
+    session = FakeSession(jobs={1: original})
+    repo = SpeechJobRepository(session)
+    retried = repo.retry(1)
+    assert retried is not original
+    assert retried.retry_of_job_id == 1
+    assert retried.operation == "tts"
+    assert retried.requested_config_json == original.requested_config_json
+    assert original.status == "failed"
+
+
+def test_add_artifact_and_lookup_by_job_and_type():
+    session = FakeSession(result=ScalarResult(many=[]))
+    repo = SpeechJobRepository(session)
+    artifact = repo.add_artifact(
+        7,
+        artifact_type="audio",
+        storage_key="jobs/7/output.wav",
+        filename="output.wav",
+        mime_type="audio/wav",
+        size_bytes=123,
+    )
+    assert artifact.speech_job_id == 7
+    assert artifact.artifact_type == "audio"
+    repo.list_artifacts(7, artifact_type="audio")
+    sql = str(session.last_stmt)
+    assert "speech_artifacts.speech_job_id" in sql
+    assert "speech_artifacts.artifact_type" in sql
