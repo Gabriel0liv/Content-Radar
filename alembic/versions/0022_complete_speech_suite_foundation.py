@@ -2,7 +2,7 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision = "0022_complete_speech_suite_foundation"
+revision = "0022_speech_suite_complete"
 down_revision = "0021_case_radar_foundation"
 branch_labels = None
 depends_on = None
