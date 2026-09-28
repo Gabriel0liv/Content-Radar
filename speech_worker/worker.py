@@ -43,6 +43,10 @@ def run_once(repo: SpeechJobRepository, executor: SpeechExecutor, worker_id: str
         importer = SpeechResultImporter(repo.db)
         if result.get("kind") == "stt":
             importer.finalize_stt(job, result)
+        elif result.get("kind") == "tts":
+            importer.finalize_tts(job, result)
+        else:
+            raise SpeechResultImportError("Resultado do worker possui tipo desconhecido")
         repo.complete(job.id, worker_id, result)
     except JobCancelled:
         repo.mark_cancelled(job.id, worker_id)
