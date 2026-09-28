@@ -2,16 +2,14 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
 from src.models.reference import ReferenceSource
 from src.repositories.speech_jobs import SpeechJobRepository
-from src.schemas.speech import SpeechSttOptions
 from src.schemas.speech_jobs import SpeechSttJobCreate
-from src.services.speech_presets import resolve_stt_config
+from src.services.speech_presets_service import SpeechPresetsService
 from src.services.speech_storage import SpeechStorage
 
 
@@ -23,27 +21,70 @@ class SpeechJobsService:
     def __init__(self, db: Session, storage: SpeechStorage | None = None) -> None:
         self.db = db
         self.repo = SpeechJobRepository(db)
+        self.presets = SpeechPresetsService(db)
         self.storage = storage or SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech"))
 
     def _validate_reference(self, reference_source_id: int | None) -> None:
         if reference_source_id is not None and self.db.get(ReferenceSource, reference_source_id) is None:
             raise SpeechReferenceNotFoundError("Referência não encontrada")
 
-    @staticmethod
-    def _resolve_request(request: SpeechSttJobCreate) -> tuple[dict, dict]:
+    def _resolve_request(self, request: SpeechSttJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
         requested = request.model_dump(exclude_none=True)
-        options = SpeechSttOptions(
-            preset=request.preset,
-            language=request.language,
-            identify_speakers=request.diarization,
-            num_speakers=request.num_speakers,
-            min_speakers=request.min_speakers,
-            max_speakers=request.max_speakers,
-            quiet_speech=request.quiet_speech,
-            initial_prompt=request.initial_prompt,
-        )
-        resolved = resolve_stt_config(options).model_dump(exclude_none=True)
-        resolved["diarize_model"] = os.getenv("SPEECH_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1")
+        base = self.presets.resolve_stt_preset(request.preset)
+        resolved: dict[str, Any] = {
+            "model": base.get("model", "medium"),
+            "language": base.get("language"),
+            "device": base.get("device", "auto"),
+            "compute_type": base.get("compute_type", "int8"),
+            "batch_size": base.get("batch_size", 2),
+            "no_diarization": base.get("no_diarization", not request.diarization),
+            "num_speakers": base.get("num_speakers"),
+            "min_speakers": base.get("min_speakers"),
+            "max_speakers": base.get("max_speakers"),
+            "vad_onset": base.get("vad_onset", 0.5),
+            "vad_offset": base.get("vad_offset", 0.363),
+            "chunk_size": base.get("chunk_size", 30),
+            "initial_prompt": base.get("initial_prompt"),
+            "diarize_model": base.get("diarize_model") or os.getenv("SPEECH_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1"),
+            "offline": bool(base.get("offline", False)),
+            "cache_dir": base.get("cache_dir") or os.getenv("HF_HOME"),
+            "export_formats": list(base.get("export_formats") or ["txt", "json", "srt", "vtt"]),
+        }
+
+        # Guided controls are authoritative over a preset.
+        resolved["language"] = request.language if request.language is not None else resolved["language"]
+        resolved["no_diarization"] = not request.diarization
+        resolved["num_speakers"] = request.num_speakers
+        resolved["min_speakers"] = None if request.num_speakers is not None else request.min_speakers
+        resolved["max_speakers"] = None if request.num_speakers is not None else request.max_speakers
+        resolved["initial_prompt"] = request.initial_prompt if request.initial_prompt is not None else resolved["initial_prompt"]
+
+        # Sensitive speech is a convenience preset, but explicit advanced VAD
+        # values always win.
+        if request.quiet_speech:
+            resolved["vad_onset"] = 0.1
+            resolved["vad_offset"] = 0.1
+
+        overrides = {
+            "model": request.model,
+            "device": request.device,
+            "compute_type": request.compute_type,
+            "batch_size": request.batch_size,
+            "vad_onset": request.vad_onset,
+            "vad_offset": request.vad_offset,
+            "chunk_size": request.chunk_size,
+            "diarize_model": request.diarize_model,
+            "offline": request.offline,
+            "cache_dir": request.cache_dir,
+            "export_formats": request.export_formats,
+        }
+        for key, value in overrides.items():
+            if value is not None:
+                resolved[key] = value
+
+        # Worker config still consumes a space-delimited legacy field while
+        # API/read models expose the normalized list.
+        resolved["formats"] = " ".join(resolved["export_formats"])
         return requested, resolved
 
     def create_stt_job(self, request: SpeechSttJobCreate):
@@ -86,8 +127,20 @@ class SpeechJobsService:
     def get_job(self, job_id: int):
         return self.repo.get(job_id)
 
-    def list_jobs(self, limit: int = 50):
-        return self.repo.list_recent(limit=max(1, min(200, limit)))
+    def list_jobs(
+        self,
+        limit: int = 50,
+        *,
+        operation: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
+    ):
+        return self.repo.list_recent(
+            limit=max(1, min(200, limit)),
+            operation=operation,
+            status=status,
+            include_archived=include_archived,
+        )
 
     def cancel_job(self, job_id: int):
         return self.repo.request_cancel(job_id)
