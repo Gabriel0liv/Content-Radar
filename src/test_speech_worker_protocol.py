@@ -30,8 +30,8 @@ def test_worker_stops_execution_when_cancel_requested():
         executor.execute(job, lambda *_: None, lambda: True)
 
 
-def test_executor_rejects_non_stt_operation():
+def test_executor_rejects_unknown_operation():
     executor = SpeechExecutor()
-    job = SimpleNamespace(operation="tts")
+    job = SimpleNamespace(operation="voice_clone")
     with pytest.raises(UnsupportedOperationError):
         executor.execute(job, lambda *_: None, lambda: False)
