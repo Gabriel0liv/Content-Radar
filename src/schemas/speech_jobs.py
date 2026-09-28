@@ -5,21 +5,34 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from src.schemas.speech import SpeechSttPresetName
+
+SpeechExportFormat = Literal["txt", "json", "srt", "vtt"]
 
 
 class SpeechSttJobCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    preset: SpeechSttPresetName = "balanced"
-    language: str | None = None
+    preset: str = Field(default="balanced", min_length=1, max_length=200)
+    language: str | None = Field(default=None, min_length=2, max_length=32)
     diarization: bool = False
     num_speakers: int | None = Field(default=None, ge=1)
     min_speakers: int | None = Field(default=None, ge=1)
     max_speakers: int | None = Field(default=None, ge=1)
     quiet_speech: bool = False
-    initial_prompt: str | None = None
+    initial_prompt: str | None = Field(default=None, max_length=8000)
     reference_source_id: int | None = None
+
+    model: str | None = Field(default=None, min_length=1, max_length=100)
+    device: Literal["auto", "cuda", "cpu"] | None = None
+    compute_type: Literal["int8", "float16", "float32"] | None = None
+    batch_size: int | None = Field(default=None, ge=1, le=128)
+    vad_onset: float | None = Field(default=None, ge=0.0, le=1.0)
+    vad_offset: float | None = Field(default=None, ge=0.0, le=1.0)
+    chunk_size: int | None = Field(default=None, ge=5, le=600)
+    diarize_model: str | None = Field(default=None, min_length=1, max_length=500)
+    offline: bool | None = None
+    cache_dir: str | None = Field(default=None, min_length=1, max_length=2000)
+    export_formats: list[SpeechExportFormat] | None = None
 
     @model_validator(mode="after")
     def validate_speaker_range(self):
@@ -30,6 +43,8 @@ class SpeechSttJobCreate(BaseModel):
             and self.min_speakers > self.max_speakers
         ):
             raise ValueError("min_speakers não pode ser maior que max_speakers")
+        if self.export_formats is not None and not self.export_formats:
+            raise ValueError("export_formats não pode ser vazio")
         return self
 
 
