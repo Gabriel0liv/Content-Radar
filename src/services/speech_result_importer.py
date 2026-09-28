@@ -31,7 +31,7 @@ class SpeechResultImporter:
         if not full_text:
             raise SpeechResultImportError("Transcrição STT vazia")
 
-        self._persist_artifacts(job.id, result.get("artifacts") or [])
+        self.persist_artifacts(job.id, result.get("artifacts") or [])
 
         if job.reference_source_id is None:
             return None
@@ -85,11 +85,26 @@ class SpeechResultImporter:
         self.db.refresh(job)
         return int(transcript.id)
 
-    def _persist_artifacts(self, job_id: int, artifacts: list[dict]) -> None:
+    def finalize_tts(self, job: SpeechJob, result: dict) -> None:
+        if result.get("kind") != "tts":
+            raise SpeechResultImportError("Resultado não é TTS")
+        artifacts = result.get("artifacts") or []
+        if not artifacts or not any(item.get("artifact_type") == "audio" for item in artifacts):
+            raise SpeechResultImportError("Resultado TTS não possui artefato de áudio")
+        self.persist_artifacts(job.id, artifacts)
+
+    def persist_artifacts(self, job_id: int, artifacts: list[dict]) -> None:
         for artifact in artifacts:
             storage_key = str(artifact.get("storage_key") or "").strip()
             if not storage_key:
                 continue
+            path = (self.storage.root / storage_key).resolve()
+            self.storage.safe_storage_key(path)
+            expected_root = self.storage.artifacts_dir(job_id).resolve()
+            try:
+                path.relative_to(expected_root)
+            except ValueError as exc:
+                raise SpeechResultImportError("Artefato aponta para fora do diretório do job") from exc
             existing = self.db.execute(
                 select(SpeechArtifact).where(
                     SpeechArtifact.speech_job_id == job_id,
