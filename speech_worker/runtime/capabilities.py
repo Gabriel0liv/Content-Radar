@@ -20,15 +20,21 @@ def _torch_details(torch_available: bool) -> tuple[bool, str | None, int | None]
         return False, None, None
     try:
         import torch  # type: ignore
-
         if not torch.cuda.is_available():
             return False, None, None
         gpu_name = torch.cuda.get_device_name(0)
         props = torch.cuda.get_device_properties(0)
-        vram_mb = int(props.total_memory / (1024 * 1024))
-        return True, gpu_name, vram_mb
+        return True, gpu_name, int(props.total_memory / (1024 * 1024))
     except Exception:
         return False, None, None
+
+
+def _tts_engines() -> list[str]:
+    try:
+        from speech_worker.tts.registry import TTSRegistry
+        return [item["id"] for item in TTSRegistry().list_engines() if item["available"]]
+    except Exception:
+        return []
 
 
 def detect_capabilities(worker_id: str | None = None) -> WorkerCapabilities:
@@ -39,10 +45,16 @@ def detect_capabilities(worker_id: str | None = None) -> WorkerCapabilities:
     cuda_available, gpu_name, vram_mb = _torch_details(torch_available)
     stt_ready = ffmpeg_available and whisperx_available and torch_available
     diarization_ready = stt_ready and bool(os.getenv("HF_TOKEN"))
+    tts_engines = _tts_engines()
+    operations: list[str] = []
+    if stt_ready:
+        operations.append("stt")
+    if tts_engines:
+        operations.append("tts")
 
     return WorkerCapabilities(
         worker_id=resolved_worker_id,
-        operations=["stt"] if stt_ready else [],
+        operations=operations,
         cpu_available=True,
         ffmpeg_available=ffmpeg_available,
         whisperx_available=whisperx_available,
@@ -52,7 +64,7 @@ def detect_capabilities(worker_id: str | None = None) -> WorkerCapabilities:
         vram_mb=vram_mb,
         stt_ready=stt_ready,
         diarization_ready=diarization_ready,
-        tts_engines=[],
+        tts_engines=tts_engines,
     )
 
 
