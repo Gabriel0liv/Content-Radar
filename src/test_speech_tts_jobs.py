@@ -1,5 +1,6 @@
 from pathlib import Path
 from types import SimpleNamespace
+import wave
 
 import pytest
 
@@ -28,8 +29,13 @@ class FakeEngine:
 
     def synthesize(self, text, output_path, output_format="wav"):
         self.calls.append((text, str(output_path), output_format))
-        Path(output_path).write_bytes(b"RIFFfake")
-        return Path(output_path)
+        path = Path(output_path)
+        with wave.open(str(path), "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(16000)
+            handle.writeframes(b"\x00\x00" * 160)
+        return path
 
 
 class FakeRegistry:
