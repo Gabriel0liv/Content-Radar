@@ -89,7 +89,10 @@ export function TranscriptionPanel() {
           </div>
         )}
 
-        <label className="mt-4 block text-xs text-slate-400">Prompt inicial<textarea value={options.initial_prompt || ""} onChange={(e) => setOptions((o) => ({ ...o, initial_prompt: e.target.value }))} rows={2} placeholder="Vocabulário, nomes próprios ou contexto opcional..." className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
+          <label className="block text-xs text-slate-400">Prompt inicial<textarea value={options.initial_prompt || ""} onChange={(e) => setOptions((o) => ({ ...o, initial_prompt: e.target.value }))} rows={2} placeholder="Vocabulário, nomes próprios ou contexto opcional..." className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+          <label className="text-xs text-slate-400">Vincular à Biblioteca (ID)<input type="number" min={1} value={options.reference_source_id ?? ""} onChange={(e) => setNumber("reference_source_id", e.target.value)} placeholder="Opcional" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /><span className="mt-1 block text-[10px] text-slate-600">Se informado, a transcrição concluída é vinculada à referência existente.</span></label>
+        </div>
 
         <button onClick={() => setAdvanced((v) => !v)} className="mt-4 flex items-center gap-2 text-xs font-medium text-indigo-300">{advanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} Opções avançadas</button>
         {advanced && (
