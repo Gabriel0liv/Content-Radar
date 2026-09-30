@@ -101,6 +101,7 @@ class SpeechJobRead(BaseModel):
     progress_message: str | None = None
     requested_config_json: dict[str, Any]
     resolved_config_json: dict[str, Any] | None = None
+    result_json: dict[str, Any] | None = None
     reference_source_id: int | None = None
     transcript_id: int | None = None
     retry_of_job_id: int | None = None
@@ -112,6 +113,31 @@ class SpeechJobRead(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     updated_at: datetime
+
+
+class SpeechArtifactRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    speech_job_id: int
+    artifact_type: str
+    filename: str
+    mime_type: str | None = None
+    size_bytes: int | None = None
+    created_at: datetime
+
+
+class SpeechSpeakerMappingRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    raw_speaker: str
+    display_name: str
+
+
+class SpeechSpeakerMappingUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(min_length=1, max_length=200)
 
 
 class SpeechQueueStatus(BaseModel):
