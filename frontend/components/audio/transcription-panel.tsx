@@ -1,17 +1,19 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { ChevronDown, ChevronUp, Loader2, Upload } from "lucide-react";
+import { AlertTriangle, ChevronDown, ChevronUp, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { speechApi } from "@/lib/speech-api";
-import type { SpeechJob, SttUploadOptions } from "@/lib/speech-types";
+import type { SpeechCapabilities, SpeechJob, SttUploadOptions } from "@/lib/speech-types";
 import { TranscriptionResult } from "@/components/audio/transcription-result";
 
 const ACCEPT = ".mp3,.wav,.mp4,.mkv,.mov,.m4a,.webm";
+const EXPORT_FORMATS = ["txt", "json", "srt", "vtt"] as const;
 
 export function TranscriptionPanel() {
   const [file, setFile] = useState<File | null>(null);
   const [job, setJob] = useState<SpeechJob | null>(null);
+  const [capabilities, setCapabilities] = useState<SpeechCapabilities | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [advanced, setAdvanced] = useState(false);
   const [options, setOptions] = useState<SttUploadOptions>({
@@ -25,7 +27,14 @@ export function TranscriptionPanel() {
   });
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => () => { if (pollRef.current) clearInterval(pollRef.current); }, []);
+  useEffect(() => {
+    speechApi.getCapabilities().then(setCapabilities).catch(() => undefined);
+    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+  }, []);
+
+  const caps = capabilities?.capabilities || {};
+  const cudaAvailable = Boolean(caps.cuda_available);
+  const diarizationReady = Boolean(caps.diarization_ready);
 
   const poll = (jobId: number) => {
     if (pollRef.current) clearInterval(pollRef.current);
@@ -61,10 +70,16 @@ export function TranscriptionPanel() {
   };
 
   const setNumber = (key: keyof SttUploadOptions, raw: string) => setOptions((old) => ({ ...old, [key]: raw === "" ? undefined : Number(raw) }));
+  const toggleFormat = (format: string) => setOptions((old) => {
+    const current = old.export_formats || [];
+    const next = current.includes(format) ? current.filter((item) => item !== format) : [...current, format];
+    return { ...old, export_formats: next };
+  });
 
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-slate-800 bg-[#0b101c]/60 p-5">
+        {capabilities && !capabilities.worker_online && <div className="mb-4 flex gap-2 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-300"><AlertTriangle className="h-4 w-4 shrink-0" />O speech worker está offline. O job pode ser criado, mas ficará na fila até um worker compatível voltar.</div>}
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/60 p-5 text-center hover:border-indigo-500">
             <Upload className="mb-2 h-6 w-6 text-indigo-400" />
@@ -81,6 +96,8 @@ export function TranscriptionPanel() {
           </div>
         </div>
 
+        {options.diarization && !diarizationReady && capabilities?.worker_online && <div className="mt-3 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-300">O worker atual não informa diarização pronta. Verifique WhisperX/pyannote e o acesso Hugging Face no Diagnóstico.</div>}
+
         {options.diarization && (
           <div className="mt-4 grid gap-3 sm:grid-cols-3">
             <label className="text-xs text-slate-400">Speakers exatos<input type="number" min={1} value={options.num_speakers ?? ""} onChange={(e) => setNumber("num_speakers", e.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
@@ -94,23 +111,27 @@ export function TranscriptionPanel() {
           <label className="text-xs text-slate-400">Vincular à Biblioteca (ID)<input type="number" min={1} value={options.reference_source_id ?? ""} onChange={(e) => setNumber("reference_source_id", e.target.value)} placeholder="Opcional" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /><span className="mt-1 block text-[10px] text-slate-600">Se informado, a transcrição concluída é vinculada à referência existente.</span></label>
         </div>
 
+        <div className="mt-4"><div className="text-xs text-slate-400">Arquivos de saída</div><div className="mt-2 flex flex-wrap gap-3">{EXPORT_FORMATS.map((format) => <label key={format} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={(options.export_formats || []).includes(format)} onChange={() => toggleFormat(format)} /> {format.toUpperCase()}</label>)}</div>{(options.export_formats || []).length === 0 && <p className="mt-1 text-xs text-rose-300">Selecione pelo menos um formato.</p>}</div>
+
         <button onClick={() => setAdvanced((v) => !v)} className="mt-4 flex items-center gap-2 text-xs font-medium text-indigo-300">{advanced ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />} Opções avançadas</button>
         {advanced && (
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="text-xs text-slate-400">Modelo<input value={options.model || ""} onChange={(e) => setOptions((o) => ({ ...o, model: e.target.value || undefined }))} placeholder="medium" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
-            <label className="text-xs text-slate-400">Device<select value={options.device || "auto"} onChange={(e) => setOptions((o) => ({ ...o, device: e.target.value as any }))} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"><option value="auto">Auto</option><option value="cpu">CPU</option><option value="cuda">CUDA</option></select></label>
-            <label className="text-xs text-slate-400">Compute<select value={options.compute_type || "int8"} onChange={(e) => setOptions((o) => ({ ...o, compute_type: e.target.value as any }))} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"><option value="int8">int8</option><option value="float16">float16</option><option value="float32">float32</option></select></label>
+            <label className="text-xs text-slate-400">Device<select value={options.device || "auto"} onChange={(e) => setOptions((o) => ({ ...o, device: e.target.value as any }))} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"><option value="auto">Auto</option><option value="cpu">CPU</option><option value="cuda" disabled={capabilities?.worker_online && !cudaAvailable}>CUDA{capabilities?.worker_online && !cudaAvailable ? " (indisponível)" : ""}</option></select></label>
+            <label className="text-xs text-slate-400">Compute<select value={options.compute_type || "int8"} onChange={(e) => setOptions((o) => ({ ...o, compute_type: e.target.value as any }))} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"><option value="int8">int8</option><option value="float16" disabled={capabilities?.worker_online && !cudaAvailable}>float16</option><option value="float32">float32</option></select></label>
             <label className="text-xs text-slate-400">Batch<input type="number" min={1} value={options.batch_size ?? ""} onChange={(e) => setNumber("batch_size", e.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
             <label className="text-xs text-slate-400">VAD onset<input type="number" step="0.01" min={0} max={1} value={options.vad_onset ?? ""} onChange={(e) => setNumber("vad_onset", e.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
             <label className="text-xs text-slate-400">VAD offset<input type="number" step="0.01" min={0} max={1} value={options.vad_offset ?? ""} onChange={(e) => setNumber("vad_offset", e.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
             <label className="text-xs text-slate-400">Chunk (s)<input type="number" min={5} value={options.chunk_size ?? ""} onChange={(e) => setNumber("chunk_size", e.target.value)} className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+            <label className="text-xs text-slate-400">Modelo diarização<input value={options.diarize_model || ""} onChange={(e) => setOptions((o) => ({ ...o, diarize_model: e.target.value || undefined }))} placeholder="pyannote/..." className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
+            <label className="text-xs text-slate-400 lg:col-span-2">Cache de modelos<input value={options.cache_dir || ""} onChange={(e) => setOptions((o) => ({ ...o, cache_dir: e.target.value || undefined }))} placeholder="Opcional; caminho no worker" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
             <label className="flex items-end gap-2 pb-2 text-sm text-slate-300"><input type="checkbox" checked={options.offline || false} onChange={(e) => setOptions((o) => ({ ...o, offline: e.target.checked }))} /> Offline</label>
           </div>
         )}
 
         <div className="mt-5 flex items-center justify-between gap-4">
           <p className="text-xs text-slate-600">A extensão escolhida no navegador é apenas conveniência; o servidor valida o upload.</p>
-          <button onClick={submit} disabled={!file || submitting || job?.status === "queued" || job?.status === "running"} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Transcrever</button>
+          <button onClick={submit} disabled={!file || submitting || (options.export_formats || []).length === 0 || job?.status === "queued" || job?.status === "running"} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Transcrever</button>
         </div>
       </div>
 
