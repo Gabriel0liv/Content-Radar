@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
+from src.repositories.speech_jobs import SpeechJobRepository
 from src.schemas.speech import SpeechSttOptions
+from src.services.speech_assets_service import SpeechAssetsService
 from src.services.speech_presets import list_builtin_stt_presets, resolve_stt_config
 from src.services.speech_presets_service import (
     BuiltinSpeechPresetError,
@@ -17,6 +21,7 @@ from src.services.speech_presets_service import (
     SpeechPresetsService,
 )
 from src.services.speech_settings_service import InvalidSpeechSettingsError, SpeechSettingsService
+from src.services.speech_storage import SpeechStorage
 from speech_worker.tts.ptbr_text import analyze_ptbr_text
 
 
@@ -65,6 +70,10 @@ def _presets_service(db: Session = Depends(get_db)) -> SpeechPresetsService:
     return SpeechPresetsService(db)
 
 
+def _assets_service() -> SpeechAssetsService:
+    return SpeechAssetsService(SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech")))
+
+
 def _preset_error(exc: Exception) -> HTTPException:
     if isinstance(exc, DuplicateSpeechPresetError):
         return HTTPException(status_code=409, detail=str(exc))
@@ -93,6 +102,31 @@ def analyze_tts_text(request: SpeechTtsAnalyzeRequest):
         "language": request.language,
         "analysis": analyze_ptbr_text(request.text),
     }
+
+
+@router.get("/voices")
+def list_voices(
+    db: Session = Depends(get_db),
+    assets: SpeechAssetsService = Depends(_assets_service),
+):
+    state = SpeechJobRepository(db).latest_worker_state()
+    capabilities = state.capabilities_json if state is not None else None
+    return {"voices": assets.list_voices(capabilities=capabilities)}
+
+
+@router.get("/voices/{voice_id}/sample")
+def get_voice_sample(
+    voice_id: str,
+    assets: SpeechAssetsService = Depends(_assets_service),
+):
+    try:
+        sample = assets.get_sample(voice_id)
+        if sample["state"] != "ready":
+            raise HTTPException(status_code=404, detail="Amostra de voz ainda não foi gerada")
+        path = assets.sample_path(voice_id)
+        return FileResponse(path, media_type="audio/wav", filename=path.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
 @router.get("/presets")
