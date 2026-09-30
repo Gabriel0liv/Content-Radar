@@ -84,6 +84,9 @@ jobs:
           src/test_speech_tts_jobs.py
           src/test_speech_tts_registry.py
           src/test_speech_tts_text.py
+          src/test_speech_voice_registry.py
+          src/test_speech_voice_samples.py
+          src/test_speech_voice_compare.py
       - name: Full backend suite
         run: python -m pytest -q
       - name: Real public provider smoke (informational)
