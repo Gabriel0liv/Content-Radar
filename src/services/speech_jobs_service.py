@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
@@ -163,11 +164,7 @@ class SpeechJobsService:
         sample_text = (text or _DEFAULT_VOICE_SAMPLE_TEXT).strip()
         if not sample_text:
             raise ValueError("Texto da amostra não pode ser vazio")
-        requested = {
-            "mode": "voice_sample",
-            "voice_id": voice_id,
-            "text": sample_text,
-        }
+        requested = {"mode": "voice_sample", "voice_id": voice_id, "text": sample_text}
         resolved = {
             "mode": "voice_sample",
             "engine": voice["engine"],
@@ -181,25 +178,12 @@ class SpeechJobsService:
             "offline": False,
             "chunk_chars": 400,
         }
-        return self.repo.create(
-            operation="tts",
-            requested_config_json=requested,
-            resolved_config_json=resolved,
-            input_path=None,
-            reference_source_id=None,
-        )
+        return self.repo.create(operation="tts", requested_config_json=requested, resolved_config_json=resolved, input_path=None, reference_source_id=None)
 
     def create_all_voice_sample_jobs(self, *, text: str | None = None) -> list[Any]:
         return [self.create_voice_sample_job(voice["id"], text=text) for voice in self.assets.list_voices()]
 
-    def create_voice_compare_job(
-        self,
-        *,
-        text: str,
-        voice_ids: list[str] | None = None,
-        language: str = "pt-br",
-        markdown_report: bool = True,
-    ):
+    def create_voice_compare_job(self, *, text: str, voice_ids: list[str] | None = None, language: str = "pt-br", markdown_report: bool = True):
         clean_text = text.strip()
         if not clean_text:
             raise ValueError("Texto da comparação não pode ser vazio")
@@ -208,13 +192,7 @@ class SpeechJobsService:
             self.assets.get_voice(voice_id)
             if voice_id not in normalized_voice_ids:
                 normalized_voice_ids.append(voice_id)
-        requested = {
-            "mode": "voice_compare",
-            "text": clean_text,
-            "voice_ids": normalized_voice_ids,
-            "language": language,
-            "markdown_report": markdown_report,
-        }
+        requested = {"mode": "voice_compare", "text": clean_text, "voice_ids": normalized_voice_ids, "language": language, "markdown_report": markdown_report}
         resolved = {
             "mode": "voice_compare",
             "effective_text": clean_text,
@@ -226,13 +204,7 @@ class SpeechJobsService:
             "speed": 1.0,
             "compare_report_markdown": markdown_report,
         }
-        return self.repo.create(
-            operation="tts",
-            requested_config_json=requested,
-            resolved_config_json=resolved,
-            input_path=None,
-            reference_source_id=None,
-        )
+        return self.repo.create(operation="tts", requested_config_json=requested, resolved_config_json=resolved, input_path=None, reference_source_id=None)
 
     def analyze_tts_text(self, text: str) -> dict[str, Any]:
         return analyze_ptbr_text(text)
@@ -241,15 +213,62 @@ class SpeechJobsService:
         return self.repo.get(job_id)
 
     def list_jobs(self, limit: int = 50, *, operation: str | None = None, status: str | None = None, include_archived: bool = False):
-        return self.repo.list_recent(
-            limit=max(1, min(200, limit)),
-            operation=operation,
-            status=status,
-            include_archived=include_archived,
-        )
+        return self.repo.list_recent(limit=max(1, min(200, limit)), operation=operation, status=status, include_archived=include_archived)
 
     def cancel_job(self, job_id: int):
         return self.repo.request_cancel(job_id)
+
+    def retry_job(self, job_id: int):
+        return self.repo.retry(job_id)
+
+    def archive_job(self, job_id: int):
+        return self.repo.archive(job_id)
+
+    def _artifact_path(self, job_id: int, artifact: Any) -> Path:
+        storage_key = str(getattr(artifact, "storage_key", "") or "").strip()
+        if not storage_key:
+            raise ValueError("Artefato não possui caminho de armazenamento")
+        path = (self.storage.root / storage_key).resolve()
+        self.storage.safe_storage_key(path)
+        job_root = self.storage.artifacts_dir(job_id).resolve()
+        sample_root = (self.storage.root / "assets" / "voice_samples").resolve()
+        allowed = False
+        try:
+            path.relative_to(job_root)
+            allowed = True
+        except ValueError:
+            if getattr(artifact, "artifact_type", None) == "voice_sample":
+                try:
+                    path.relative_to(sample_root)
+                    allowed = True
+                except ValueError:
+                    pass
+        if not allowed:
+            raise ValueError("Artefato aponta para fora do armazenamento permitido")
+        return path
+
+    def resolve_artifact_download(self, job_id: int, artifact_id: int):
+        artifact = self.repo.get_artifact(job_id, artifact_id)
+        if artifact is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        path = self._artifact_path(job_id, artifact)
+        if not path.is_file():
+            raise FileNotFoundError("Arquivo do artefato não encontrado")
+        return artifact, path
+
+    def delete_artifact(self, job_id: int, artifact_id: int):
+        job = self.repo.get(job_id)
+        if job is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        artifact = self.repo.get_artifact(job_id, artifact_id)
+        if artifact is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        path = self._artifact_path(job_id, artifact)
+        path.unlink(missing_ok=True)
+        deleted = self.repo.delete_artifact(artifact_id)
+        if deleted is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        return deleted
 
     def get_status(self, stale_after_seconds: int = 90) -> dict:
         state = self.repo.latest_worker_state()
@@ -263,10 +282,5 @@ class SpeechJobsService:
         return {
             "mode": "native",
             "queue": self.repo.queue_counts(),
-            "worker": {
-                "online": online,
-                "worker_id": state.worker_id if state else None,
-                "last_heartbeat_at": state.last_heartbeat_at if state else None,
-                "capabilities": state.capabilities_json if state else None,
-            },
+            "worker": {"online": online, "worker_id": state.worker_id if state else None, "last_heartbeat_at": state.last_heartbeat_at if state else None, "capabilities": state.capabilities_json if state else None},
         }
