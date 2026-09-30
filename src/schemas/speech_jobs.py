@@ -64,6 +64,32 @@ class SpeechTtsJobCreate(BaseModel):
     preview_chars: int = Field(default=300, ge=10, le=2000)
 
 
+class SpeechVoiceSampleRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str | None = Field(default=None, min_length=1, max_length=5000)
+
+
+class SpeechVoiceCompareRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: str = Field(min_length=1, max_length=20_000)
+    voice_ids: list[str] | None = None
+    language: str = Field(default="pt-br", min_length=2, max_length=32)
+    markdown_report: bool = True
+
+    @model_validator(mode="after")
+    def validate_voice_ids(self):
+        if self.voice_ids is not None:
+            normalized = [voice_id.strip() for voice_id in self.voice_ids]
+            if any(not voice_id for voice_id in normalized):
+                raise ValueError("voice_ids não pode conter valores vazios")
+            if len(normalized) > 100:
+                raise ValueError("voice_ids excede o limite")
+            self.voice_ids = normalized
+        return self
+
+
 class SpeechJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
