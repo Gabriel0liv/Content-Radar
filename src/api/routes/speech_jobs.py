@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Iterator, Literal
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile, status
+from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
@@ -121,11 +122,7 @@ def create_tts_preview_job(request: SpeechTtsJobCreate, service: SpeechJobsServi
 
 
 @router.post("/jobs/tts/voice-samples/{voice_id}", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
-def create_voice_sample_job(
-    voice_id: str,
-    request: SpeechVoiceSampleRequest,
-    service: SpeechJobsService = Depends(get_speech_jobs_service),
-):
+def create_voice_sample_job(voice_id: str, request: SpeechVoiceSampleRequest, service: SpeechJobsService = Depends(get_speech_jobs_service)):
     try:
         return service.create_voice_sample_job(voice_id, text=request.text)
     except ValueError as exc:
@@ -133,10 +130,7 @@ def create_voice_sample_job(
 
 
 @router.post("/jobs/tts/voice-samples", response_model=list[SpeechJobRead], status_code=status.HTTP_201_CREATED)
-def create_all_voice_sample_jobs(
-    request: SpeechVoiceSampleRequest,
-    service: SpeechJobsService = Depends(get_speech_jobs_service),
-):
+def create_all_voice_sample_jobs(request: SpeechVoiceSampleRequest, service: SpeechJobsService = Depends(get_speech_jobs_service)):
     try:
         return service.create_all_voice_sample_jobs(text=request.text)
     except ValueError as exc:
@@ -144,17 +138,9 @@ def create_all_voice_sample_jobs(
 
 
 @router.post("/jobs/tts/voice-compare", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
-def create_voice_compare_job(
-    request: SpeechVoiceCompareRequest,
-    service: SpeechJobsService = Depends(get_speech_jobs_service),
-):
+def create_voice_compare_job(request: SpeechVoiceCompareRequest, service: SpeechJobsService = Depends(get_speech_jobs_service)):
     try:
-        return service.create_voice_compare_job(
-            text=request.text,
-            voice_ids=request.voice_ids,
-            language=request.language,
-            markdown_report=request.markdown_report,
-        )
+        return service.create_voice_compare_job(text=request.text, voice_ids=request.voice_ids, language=request.language, markdown_report=request.markdown_report)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -184,6 +170,44 @@ def cancel_job(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs
     if job is None:
         raise HTTPException(status_code=404, detail="Job de áudio não encontrado")
     return job
+
+
+@router.post("/jobs/{job_id}/retry", status_code=status.HTTP_201_CREATED)
+def retry_job(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    job = service.retry_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job de áudio não encontrado")
+    return job
+
+
+@router.post("/jobs/{job_id}/archive")
+def archive_job(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    job = service.archive_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job de áudio não encontrado")
+    return {"id": job.id, "archived": True, "transcript_id": getattr(job, "transcript_id", None)}
+
+
+@router.get("/jobs/{job_id}/artifacts/{artifact_id}/download")
+def download_artifact(job_id: int, artifact_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        artifact, path = service.resolve_artifact_download(job_id, artifact_id)
+        return FileResponse(path, media_type=artifact.mime_type or "application/octet-stream", filename=artifact.filename)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.delete("/jobs/{job_id}/artifacts/{artifact_id}")
+def delete_artifact(job_id: int, artifact_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        artifact = service.delete_artifact(job_id, artifact_id)
+        return {"id": artifact.id, "deleted": True}
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/status", response_model=SpeechStatusRead)
