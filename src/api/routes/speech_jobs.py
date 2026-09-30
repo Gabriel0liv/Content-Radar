@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 
 from src.db.session import get_db
 from src.schemas.speech_jobs import (
+    SpeechArtifactRead,
     SpeechJobRead,
+    SpeechSpeakerMappingRead,
+    SpeechSpeakerMappingUpdate,
     SpeechStatusRead,
     SpeechSttJobCreate,
     SpeechTtsJobCreate,
@@ -162,6 +165,37 @@ def get_job(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs_se
     if job is None:
         raise HTTPException(status_code=404, detail="Job de áudio não encontrado")
     return job
+
+
+@router.get("/jobs/{job_id}/artifacts", response_model=list[SpeechArtifactRead])
+def list_artifacts(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        return service.list_artifacts(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.get("/jobs/{job_id}/speaker-mappings", response_model=list[SpeechSpeakerMappingRead])
+def list_speaker_mappings(job_id: int, service: SpeechJobsService = Depends(get_speech_jobs_service)):
+    try:
+        return service.list_speaker_mappings(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.put("/jobs/{job_id}/speaker-mappings/{raw_speaker}", response_model=SpeechSpeakerMappingRead)
+def set_speaker_mapping(
+    job_id: int,
+    raw_speaker: str,
+    request: SpeechSpeakerMappingUpdate,
+    service: SpeechJobsService = Depends(get_speech_jobs_service),
+):
+    try:
+        return service.set_speaker_mapping(job_id, raw_speaker, request.display_name)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/jobs/{job_id}/cancel", response_model=SpeechJobRead)
