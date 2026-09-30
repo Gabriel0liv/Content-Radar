@@ -7,7 +7,7 @@ from typing import Iterable
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.models.speech import SpeechArtifact, SpeechJob, SpeechWorkerState
+from src.models.speech import SpeechArtifact, SpeechJob, SpeechSpeakerMapping, SpeechWorkerState
 
 
 class SpeechJobOwnershipError(RuntimeError):
@@ -132,6 +132,41 @@ class SpeechJobRepository:
         self.db.delete(artifact)
         self.db.commit()
         return artifact
+
+    def list_speaker_mappings(self, job_id: int) -> list[SpeechSpeakerMapping]:
+        stmt = (
+            select(SpeechSpeakerMapping)
+            .where(SpeechSpeakerMapping.speech_job_id == job_id)
+            .order_by(SpeechSpeakerMapping.raw_speaker, SpeechSpeakerMapping.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def set_speaker_mapping(self, job_id: int, raw_speaker: str, display_name: str) -> SpeechSpeakerMapping:
+        job = self.get(job_id)
+        if job is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        normalized_raw = raw_speaker.strip()
+        normalized_display = display_name.strip()
+        if not normalized_raw or not normalized_display:
+            raise ValueError("Speaker e nome de exibição são obrigatórios")
+        stmt = select(SpeechSpeakerMapping).where(
+            SpeechSpeakerMapping.speech_job_id == job_id,
+            SpeechSpeakerMapping.raw_speaker == normalized_raw,
+        )
+        mapping = self.db.execute(stmt).scalar_one_or_none()
+        if mapping is None:
+            mapping = SpeechSpeakerMapping(
+                speech_job_id=job_id,
+                transcript_id=job.transcript_id,
+                raw_speaker=normalized_raw,
+                display_name=normalized_display,
+            )
+            self.db.add(mapping)
+        else:
+            mapping.display_name = normalized_display
+        self.db.commit()
+        self.db.refresh(mapping)
+        return mapping
 
     def request_cancel(self, job_id: int) -> SpeechJob | None:
         job = self.get(job_id)
