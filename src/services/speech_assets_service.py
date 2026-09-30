@@ -19,6 +19,9 @@ class SpeechAssetsService:
             raise ValueError("Voz TTS desconhecida")
         return voice
 
+    def get_voice(self, voice_id: str) -> dict[str, Any]:
+        return deepcopy(self._voice(voice_id))
+
     def voice_samples_dir(self) -> Path:
         path = self.storage.root / "assets" / "voice_samples"
         path.mkdir(parents=True, exist_ok=True)
