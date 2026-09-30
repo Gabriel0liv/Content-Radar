@@ -7,6 +7,7 @@ import wave
 from pathlib import Path
 from typing import Any, Callable
 
+from src.services.speech_assets_service import SpeechAssetsService
 from src.services.speech_storage import SpeechStorage
 from src.services.speech_worker_protocol import JobCancelled
 from speech_worker.tts.registry import TTSRegistry
@@ -139,13 +140,32 @@ class TTSRunner:
                 _wav_to_mp3(merged_wav, output_path)
                 mime_type = "audio/mpeg"
 
+            artifacts = [_artifact(self.storage, output_path, "audio", mime_type)]
+            kind = "tts"
+            if config.get("mode") == "voice_sample":
+                if output_format != "wav":
+                    raise ValueError("Amostras de voz devem ser geradas em WAV")
+                sample_path = SpeechAssetsService(self.storage).sample_path(voice)
+                shutil.copyfile(output_path, sample_path)
+                artifacts.append(
+                    _artifact(
+                        self.storage,
+                        sample_path,
+                        "voice_sample",
+                        "audio/wav",
+                        voice_id=voice,
+                        engine=engine_name,
+                    )
+                )
+                kind = "tts_voice_sample"
+
             progress_callback("finalizing", 99, "Finalizando áudio")
             return {
-                "kind": "tts",
+                "kind": kind,
                 "engine": engine_name,
                 "voice": voice,
                 "preview": bool(config.get("preview")),
-                "artifacts": [_artifact(self.storage, output_path, "audio", mime_type)],
+                "artifacts": artifacts,
             }
         finally:
             for path in fragment_paths:
