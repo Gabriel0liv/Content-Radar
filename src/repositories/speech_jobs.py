@@ -118,6 +118,21 @@ class SpeechJobRepository:
         stmt = stmt.order_by(SpeechArtifact.created_at, SpeechArtifact.id)
         return list(self.db.execute(stmt).scalars())
 
+    def get_artifact(self, job_id: int, artifact_id: int) -> SpeechArtifact | None:
+        stmt = select(SpeechArtifact).where(
+            SpeechArtifact.id == artifact_id,
+            SpeechArtifact.speech_job_id == job_id,
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def delete_artifact(self, artifact_id: int) -> SpeechArtifact | None:
+        artifact = self.db.get(SpeechArtifact, artifact_id)
+        if artifact is None:
+            return None
+        self.db.delete(artifact)
+        self.db.commit()
+        return artifact
+
     def request_cancel(self, job_id: int) -> SpeechJob | None:
         job = self.get(job_id)
         if job is None:
