@@ -38,10 +38,23 @@ def _job(**overrides):
     return SimpleNamespace(**data)
 
 
-def test_job_read_exposes_result_payload_needed_by_audio_workspace():
+def test_job_read_exposes_result_payload_needed_by_audio_workspace_without_storage_keys():
     class FakeService:
         def get_job(self, job_id):
-            return _job(id=job_id)
+            return _job(
+                id=job_id,
+                result_json={
+                    "kind": "stt",
+                    "normalized": {"full_text": "Olá", "segments": []},
+                    "artifacts": [
+                        {
+                            "artifact_type": "srt",
+                            "storage_key": "jobs/22/artifacts/transcript.srt",
+                            "filename": "transcript.srt",
+                        }
+                    ],
+                },
+            )
 
     app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
     try:
@@ -50,7 +63,10 @@ def test_job_read_exposes_result_payload_needed_by_audio_workspace():
         app.dependency_overrides.clear()
 
     assert response.status_code == 200
-    assert response.json()["result_json"]["normalized"]["full_text"] == "Olá"
+    result = response.json()["result_json"]
+    assert result["normalized"]["full_text"] == "Olá"
+    assert result["artifacts"][0]["filename"] == "transcript.srt"
+    assert "storage_key" not in result["artifacts"][0]
 
 
 def test_job_artifacts_can_be_listed_before_download():
