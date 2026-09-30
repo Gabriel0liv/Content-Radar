@@ -9,9 +9,16 @@ from sqlalchemy.orm import Session
 from src.models.reference import ReferenceSource
 from src.repositories.speech_jobs import SpeechJobRepository
 from src.schemas.speech_jobs import SpeechSttJobCreate, SpeechTtsJobCreate
+from src.services.speech_assets_service import SpeechAssetsService
 from src.services.speech_presets_service import SpeechPresetsService
 from src.services.speech_storage import SpeechStorage
 from speech_worker.tts.ptbr_text import analyze_ptbr_text, normalize_ptbr_text
+
+
+_DEFAULT_VOICE_SAMPLE_TEXT = (
+    "Olá! Esta é uma amostra de voz em português do Brasil para comparar ritmo, "
+    "clareza, entonação e naturalidade."
+)
 
 
 class SpeechReferenceNotFoundError(ValueError):
@@ -24,6 +31,7 @@ class SpeechJobsService:
         self.repo = SpeechJobRepository(db)
         self.presets = SpeechPresetsService(db)
         self.storage = storage or SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech"))
+        self.assets = SpeechAssetsService(self.storage)
 
     def _validate_reference(self, reference_source_id: int | None) -> None:
         if reference_source_id is not None and self.db.get(ReferenceSource, reference_source_id) is None:
@@ -142,6 +150,82 @@ class SpeechJobsService:
 
     def create_tts_job(self, request: SpeechTtsJobCreate):
         requested, resolved = self._resolve_tts_request(request)
+        return self.repo.create(
+            operation="tts",
+            requested_config_json=requested,
+            resolved_config_json=resolved,
+            input_path=None,
+            reference_source_id=None,
+        )
+
+    def create_voice_sample_job(self, voice_id: str, *, text: str | None = None):
+        voice = self.assets.get_voice(voice_id)
+        sample_text = (text or _DEFAULT_VOICE_SAMPLE_TEXT).strip()
+        if not sample_text:
+            raise ValueError("Texto da amostra não pode ser vazio")
+        requested = {
+            "mode": "voice_sample",
+            "voice_id": voice_id,
+            "text": sample_text,
+        }
+        resolved = {
+            "mode": "voice_sample",
+            "engine": voice["engine"],
+            "voice": voice_id,
+            "effective_text": sample_text,
+            "output_format": "wav",
+            "speed": 1.0,
+            "language": voice["language"],
+            "device": os.getenv("SPEECH_TTS_DEVICE", "cpu"),
+            "cache_dir": os.getenv("SPEECH_TTS_CACHE"),
+            "offline": False,
+            "chunk_chars": 400,
+        }
+        return self.repo.create(
+            operation="tts",
+            requested_config_json=requested,
+            resolved_config_json=resolved,
+            input_path=None,
+            reference_source_id=None,
+        )
+
+    def create_all_voice_sample_jobs(self, *, text: str | None = None) -> list[Any]:
+        return [self.create_voice_sample_job(voice["id"], text=text) for voice in self.assets.list_voices()]
+
+    def create_voice_compare_job(
+        self,
+        *,
+        text: str,
+        voice_ids: list[str] | None = None,
+        language: str = "pt-br",
+        markdown_report: bool = True,
+    ):
+        clean_text = text.strip()
+        if not clean_text:
+            raise ValueError("Texto da comparação não pode ser vazio")
+        normalized_voice_ids: list[str] = []
+        for voice_id in voice_ids or []:
+            self.assets.get_voice(voice_id)
+            if voice_id not in normalized_voice_ids:
+                normalized_voice_ids.append(voice_id)
+        requested = {
+            "mode": "voice_compare",
+            "text": clean_text,
+            "voice_ids": normalized_voice_ids,
+            "language": language,
+            "markdown_report": markdown_report,
+        }
+        resolved = {
+            "mode": "voice_compare",
+            "effective_text": clean_text,
+            "voice_ids": normalized_voice_ids,
+            "language": language,
+            "device": os.getenv("SPEECH_TTS_DEVICE", "cpu"),
+            "cache_dir": os.getenv("SPEECH_TTS_CACHE"),
+            "offline": False,
+            "speed": 1.0,
+            "compare_report_markdown": markdown_report,
+        }
         return self.repo.create(
             operation="tts",
             requested_config_json=requested,
