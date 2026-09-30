@@ -78,6 +78,11 @@ _ALIASES = {
 }
 
 
+def canonical_voice_descriptors() -> list[dict[str, Any]]:
+    """Return the stable voice catalog without importing runtime engines."""
+    return [deepcopy(voice) for voice in _CANONICAL_VOICES]
+
+
 class TTSRegistry:
     def __init__(self, *, register_defaults: bool = True) -> None:
         self._engines: dict[str, Type[TTSEngine]] = {}
