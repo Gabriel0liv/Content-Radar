@@ -1,7 +1,8 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { Download, Loader2, Save } from "lucide-react";
+import { Download, Library, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { speechApi } from "@/lib/speech-api";
 import type { SpeechArtifact, SpeechJob, SpeechSpeakerMapping } from "@/lib/speech-types";
@@ -53,6 +54,13 @@ export function TranscriptionResult({ job }: { job: SpeechJob }) {
 
   return (
     <div className="space-y-5">
+      {job.reference_source_id && job.transcript_id && (
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-900/40 bg-emerald-950/20 p-3 text-sm text-emerald-200">
+          <div className="flex items-center gap-2"><Library className="h-4 w-4" /> Transcrição vinculada à Biblioteca.</div>
+          <Link href={`/references/${job.reference_source_id}`} className="font-medium text-emerald-300 hover:text-emerald-200">Abrir referência</Link>
+        </div>
+      )}
+
       {rawSpeakers.length > 0 && (
         <div className="rounded-xl border border-slate-800 bg-[#0b101c]/60 p-4">
           <h4 className="mb-3 text-sm font-semibold text-white">Speakers</h4>
