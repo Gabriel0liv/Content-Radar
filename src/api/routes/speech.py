@@ -12,6 +12,7 @@ from src.db.session import get_db
 from src.repositories.speech_jobs import SpeechJobRepository
 from src.schemas.speech import SpeechSttOptions
 from src.services.speech_assets_service import SpeechAssetsService
+from src.services.speech_capabilities_service import SpeechCapabilitiesService
 from src.services.speech_presets import list_builtin_stt_presets, resolve_stt_config
 from src.services.speech_presets_service import (
     BuiltinSpeechPresetError,
@@ -70,6 +71,10 @@ def _presets_service(db: Session = Depends(get_db)) -> SpeechPresetsService:
     return SpeechPresetsService(db)
 
 
+def _capabilities_service(db: Session = Depends(get_db)) -> SpeechCapabilitiesService:
+    return SpeechCapabilitiesService(db)
+
+
 def _assets_service() -> SpeechAssetsService:
     return SpeechAssetsService(SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech")))
 
@@ -102,6 +107,16 @@ def analyze_tts_text(request: SpeechTtsAnalyzeRequest):
         "language": request.language,
         "analysis": analyze_ptbr_text(request.text),
     }
+
+
+@router.get("/capabilities")
+def get_capabilities(service: SpeechCapabilitiesService = Depends(_capabilities_service)):
+    return service.get_capabilities()
+
+
+@router.get("/diagnostics")
+def get_diagnostics(service: SpeechCapabilitiesService = Depends(_capabilities_service)):
+    return service.get_diagnostics()
 
 
 @router.get("/voices")
