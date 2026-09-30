@@ -12,6 +12,9 @@ from speech_worker.runtime.capabilities import detect_capabilities
 from speech_worker.runtime.executor import SpeechExecutor
 
 
+_TTS_RESULT_KINDS = {"tts", "tts_voice_sample", "tts_voice_compare"}
+
+
 def run_once(repo: SpeechJobRepository, executor: SpeechExecutor, worker_id: str, lease_seconds: int) -> bool:
     capabilities = detect_capabilities(worker_id)
     repo.upsert_worker_state(worker_id, capabilities.as_dict())
@@ -43,7 +46,7 @@ def run_once(repo: SpeechJobRepository, executor: SpeechExecutor, worker_id: str
         importer = SpeechResultImporter(repo.db)
         if result.get("kind") == "stt":
             importer.finalize_stt(job, result)
-        elif result.get("kind") == "tts":
+        elif result.get("kind") in _TTS_RESULT_KINDS:
             importer.finalize_tts(job, result)
         else:
             raise SpeechResultImportError("Resultado do worker possui tipo desconhecido")
