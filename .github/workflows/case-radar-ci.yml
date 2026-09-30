@@ -44,6 +44,10 @@ jobs:
           pip install -r requirements.txt pytest
       - name: Migration smoke
         run: alembic upgrade head
+      - name: Speech migration boundary smoke
+        run: |
+          alembic downgrade 0021_case_radar_foundation
+          alembic upgrade head
       - name: Case Radar targeted suite
         run: >-
           python -m pytest -q
