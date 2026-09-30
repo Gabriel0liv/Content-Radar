@@ -215,6 +215,19 @@ class SpeechJobsService:
     def list_jobs(self, limit: int = 50, *, operation: str | None = None, status: str | None = None, include_archived: bool = False):
         return self.repo.list_recent(limit=max(1, min(200, limit)), operation=operation, status=status, include_archived=include_archived)
 
+    def list_artifacts(self, job_id: int):
+        if self.repo.get(job_id) is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        return self.repo.list_artifacts(job_id)
+
+    def list_speaker_mappings(self, job_id: int):
+        if self.repo.get(job_id) is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        return self.repo.list_speaker_mappings(job_id)
+
+    def set_speaker_mapping(self, job_id: int, raw_speaker: str, display_name: str):
+        return self.repo.set_speaker_mapping(job_id, raw_speaker, display_name)
+
     def cancel_job(self, job_id: int):
         return self.repo.request_cancel(job_id)
 
@@ -282,5 +295,10 @@ class SpeechJobsService:
         return {
             "mode": "native",
             "queue": self.repo.queue_counts(),
-            "worker": {"online": online, "worker_id": state.worker_id if state else None, "last_heartbeat_at": state.last_heartbeat_at if state else None, "capabilities": state.capabilities_json if state else None},
+            "worker": {
+                "online": online,
+                "worker_id": state.worker_id if state else None,
+                "last_heartbeat_at": state.last_heartbeat_at if state else None,
+                "capabilities": state.capabilities_json if state else None,
+            },
         }
