@@ -9,15 +9,15 @@ from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_valid
 SpeechExportFormat = Literal["txt", "json", "srt", "vtt"]
 
 
-def _public_result_payload(value: Any) -> Any:
+def _public_payload(value: Any) -> Any:
     if isinstance(value, dict):
         return {
-            key: _public_result_payload(item)
+            key: _public_payload(item)
             for key, item in value.items()
-            if key not in {"storage_key", "debug_log_path", "input_path"}
+            if key not in {"storage_key", "debug_log_path", "input_path", "cache_dir"}
         }
     if isinstance(value, list):
-        return [_public_result_payload(item) for item in value]
+        return [_public_payload(item) for item in value]
     return value
 
 
@@ -126,9 +126,9 @@ class SpeechJobRead(BaseModel):
     finished_at: datetime | None = None
     updated_at: datetime
 
-    @field_serializer("result_json")
-    def serialize_result_json(self, value: dict[str, Any] | None):
-        return _public_result_payload(value)
+    @field_serializer("resolved_config_json", "result_json")
+    def serialize_public_payload(self, value: dict[str, Any] | None):
+        return _public_payload(value)
 
 
 class SpeechArtifactRead(BaseModel):
