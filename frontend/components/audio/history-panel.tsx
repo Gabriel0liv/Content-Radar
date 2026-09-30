@@ -33,7 +33,8 @@ export function HistoryPanel() {
 
   const showArtifacts = async (jobId: number) => {
     try {
-      setArtifacts((old) => ({ ...old, [jobId]: await speechApi.listArtifacts(jobId) }));
+      const items = await speechApi.listArtifacts(jobId);
+      setArtifacts((old) => ({ ...old, [jobId]: items }));
     } catch (e: any) {
       toast.error("Falha ao carregar artefatos", { description: e.message });
     }
