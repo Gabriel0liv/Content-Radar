@@ -3,10 +3,22 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_serializer, model_validator
 
 
 SpeechExportFormat = Literal["txt", "json", "srt", "vtt"]
+
+
+def _public_result_payload(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            key: _public_result_payload(item)
+            for key, item in value.items()
+            if key not in {"storage_key", "debug_log_path", "input_path"}
+        }
+    if isinstance(value, list):
+        return [_public_result_payload(item) for item in value]
+    return value
 
 
 class SpeechSttJobCreate(BaseModel):
@@ -113,6 +125,10 @@ class SpeechJobRead(BaseModel):
     started_at: datetime | None = None
     finished_at: datetime | None = None
     updated_at: datetime
+
+    @field_serializer("result_json")
+    def serialize_result_json(self, value: dict[str, Any] | None):
+        return _public_result_payload(value)
 
 
 class SpeechArtifactRead(BaseModel):
