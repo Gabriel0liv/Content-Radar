@@ -7,7 +7,14 @@ from pydantic import ValidationError
 from sqlalchemy.orm import Session
 
 from src.db.session import get_db
-from src.schemas.speech_jobs import SpeechJobRead, SpeechStatusRead, SpeechSttJobCreate, SpeechTtsJobCreate
+from src.schemas.speech_jobs import (
+    SpeechJobRead,
+    SpeechStatusRead,
+    SpeechSttJobCreate,
+    SpeechTtsJobCreate,
+    SpeechVoiceCompareRequest,
+    SpeechVoiceSampleRequest,
+)
 from src.services.speech_jobs_service import SpeechJobsService, SpeechReferenceNotFoundError
 
 
@@ -109,6 +116,45 @@ def create_tts_job(request: SpeechTtsJobCreate, service: SpeechJobsService = Dep
 def create_tts_preview_job(request: SpeechTtsJobCreate, service: SpeechJobsService = Depends(get_speech_jobs_service)):
     try:
         return service.create_tts_job(request.model_copy(update={"preview": True}))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/jobs/tts/voice-samples/{voice_id}", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
+def create_voice_sample_job(
+    voice_id: str,
+    request: SpeechVoiceSampleRequest,
+    service: SpeechJobsService = Depends(get_speech_jobs_service),
+):
+    try:
+        return service.create_voice_sample_job(voice_id, text=request.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/jobs/tts/voice-samples", response_model=list[SpeechJobRead], status_code=status.HTTP_201_CREATED)
+def create_all_voice_sample_jobs(
+    request: SpeechVoiceSampleRequest,
+    service: SpeechJobsService = Depends(get_speech_jobs_service),
+):
+    try:
+        return service.create_all_voice_sample_jobs(text=request.text)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/jobs/tts/voice-compare", response_model=SpeechJobRead, status_code=status.HTTP_201_CREATED)
+def create_voice_compare_job(
+    request: SpeechVoiceCompareRequest,
+    service: SpeechJobsService = Depends(get_speech_jobs_service),
+):
+    try:
+        return service.create_voice_compare_job(
+            text=request.text,
+            voice_ids=request.voice_ids,
+            language=request.language,
+            markdown_report=request.markdown_report,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
