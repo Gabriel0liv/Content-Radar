@@ -95,6 +95,7 @@ jobs:
           src/test_speech_diagnostics.py
           src/test_speech_artifact_api.py
           src/test_speech_history.py
+          src/test_speech_dashboard.py
           src/test_speech_frontend_contract.py
       - name: Full backend suite
         run: python -m pytest -q
