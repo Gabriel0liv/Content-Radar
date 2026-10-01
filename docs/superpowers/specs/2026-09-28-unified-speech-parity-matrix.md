@@ -25,6 +25,8 @@ This document records the migration of useful Speech Studio capabilities into th
 |---|---|---|
 | WhisperX transcription | Environment-dependent | Executed only by `speech_worker`; API process stays lightweight. |
 | Audio/video upload | Migrated | Managed staging with filename/path validation. |
+| Multi-file/batch transcription | Migrated | Browser can select multiple media files; each upload becomes an independent durable job sharing the selected STT configuration. |
+| Recursive local-directory CLI mode | Replaced | The browser does not receive unrestricted filesystem traversal. Multi-file upload provides the safe native batch workflow; server-side jobs remain managed individually. |
 | MP3/WAV/MP4/MKV/MOV/M4A/WEBM inputs | Migrated | Server validation remains authoritative. |
 | Presets | Migrated | Built-in and personal STT presets. |
 | Model selection | Migrated | Resolved into durable worker config. |
@@ -65,7 +67,7 @@ This document records the migration of useful Speech Studio capabilities into th
 | Engine/voice preset | Migrated | Personal TTS presets use the native preset store. |
 | Per-engine missing dependency messages | Migrated | Normalized capability/unavailable reasons. |
 | Voice sample generation | Migrated | Durable TTS jobs and managed sample assets. |
-| Generate samples for all voices | Migrated | Native multi-job action. |
+| Generate samples for all voices | Migrated | Native multi-job action exposed in the Voices/models UI. |
 | PT-BR voice comparison | Migrated | Durable comparison workflow with per-voice result and report artifacts. |
 | JSON comparison report | Migrated | Managed report artifact. |
 | Markdown comparison report | Migrated | Optional managed report artifact. |
@@ -85,10 +87,14 @@ This document records the migration of useful Speech Studio capabilities into th
 | Diagnostic checks | Migrated | Native `/audio` diagnostics view over real runtime state. |
 | Health/status | Migrated | Queue and worker heartbeat/capabilities exposed by native API. |
 
-## History and artifact management
+## History, dashboard and artifact management
 
 | Capability | Status | Native behavior |
 |---|---|---|
+| Dashboard: transcriptions/TTS today | Migrated | Native dashboard counts durable STT/TTS jobs created today. |
+| Dashboard: total/completed/failed/success rate | Migrated | Derived from PostgreSQL speech history. |
+| Dashboard: voices/storage/queue/runtime | Migrated | Uses real voice capabilities, managed storage size and worker/queue state. |
+| Dashboard: recent and active jobs | Migrated | Native overview exposes recent durable jobs and current progress without filesystem paths. |
 | Job history | Migrated | Newest-first PostgreSQL history. |
 | Filter by operation/status | Migrated | Native history API/UI. |
 | Retry | Migrated | Creates a new durable job linked through `retry_of_job_id`. |
@@ -102,6 +108,7 @@ This document records the migration of useful Speech Studio capabilities into th
 
 | Legacy area | Native area | Status |
 |---|---|---|
+| Dashboard | `/audio` → Visão geral | Migrated |
 | STT page | `/audio` → Transcrever | Migrated |
 | TTS page | `/audio` → Gerar voz | Migrated |
 | Voice browser | `/audio` → Vozes e modelos | Migrated |
@@ -120,6 +127,7 @@ The global sidebar exposes a single **Áudio** entry rather than duplicating eve
 | Separate Gradio application as the normal user interface | Excluded | `/audio` is the canonical native workspace. |
 | SQLite as canonical speech history | Excluded | PostgreSQL is the shared durable store. |
 | Arbitrary local file URLs exposed to browser | Excluded | Managed storage/download boundary is required. |
+| Unrestricted recursive browser access to arbitrary local folders | Excluded | Browser-side batch selection replaces direct filesystem traversal while preserving managed-storage boundaries. |
 | Heavy ML imports inside the main FastAPI process | Excluded | Heavy engines stay isolated in `speech_worker`. |
 | Secret token echo through settings/status APIs | Excluded | Only presence/readiness state is exposed. |
 | Automatic model/GPU requirements in standard CI | Excluded | CI verifies non-heavy contracts; real runtime smokes are opt-in. |
