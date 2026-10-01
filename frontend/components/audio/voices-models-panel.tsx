@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Download, Loader2, Play, RefreshCw, Scale } from "lucide-react";
+import { Download, Loader2, Play, RefreshCw, Scale, Waves } from "lucide-react";
 import { toast } from "sonner";
 import { speechApi } from "@/lib/speech-api";
 import type { SpeechArtifact, SpeechJob, SpeechVoice } from "@/lib/speech-types";
@@ -10,6 +10,7 @@ export function VoicesModelsPanel() {
   const [voices, setVoices] = useState<SpeechVoice[]>([]);
   const [engine, setEngine] = useState<"all" | "kokoro" | "piper">("all");
   const [loading, setLoading] = useState(true);
+  const [bulkGenerating, setBulkGenerating] = useState(false);
   const [compareText, setCompareText] = useState("Olá! Esta frase serve para comparar ritmo, clareza, naturalidade e entonação das vozes em português do Brasil.");
   const [compareJob, setCompareJob] = useState<SpeechJob | null>(null);
   const [compareArtifacts, setCompareArtifacts] = useState<SpeechArtifact[]>([]);
@@ -32,6 +33,20 @@ export function VoicesModelsPanel() {
   const createSample = async (voice: SpeechVoice) => {
     try { await speechApi.createVoiceSample(voice.id); toast.success(`Amostra de ${voice.display_name} adicionada à fila`); }
     catch (e: any) { toast.error("Não foi possível gerar amostra", { description: e.message }); }
+  };
+
+  const createAllSamples = async () => {
+    setBulkGenerating(true);
+    try {
+      const jobs = await speechApi.createAllVoiceSamples();
+      toast.success(`${jobs.length} amostras adicionadas à fila`, {
+        description: "O progresso de cada voz também aparece no Histórico.",
+      });
+    } catch (e: any) {
+      toast.error("Não foi possível gerar todas as amostras", { description: e.message });
+    } finally {
+      setBulkGenerating(false);
+    }
   };
 
   const watchCompare = (id: number) => {
@@ -72,6 +87,9 @@ export function VoicesModelsPanel() {
       <div className="flex flex-wrap items-center gap-3">
         <select value={engine} onChange={(e) => setEngine(e.target.value as any)} className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white"><option value="all">Todos os motores</option><option value="kokoro">Kokoro</option><option value="piper">Piper</option></select>
         <button onClick={load} className="flex items-center gap-2 rounded-lg border border-slate-800 px-3 py-2 text-sm text-slate-300 hover:bg-slate-900"><RefreshCw className="h-4 w-4" /> Atualizar</button>
+        <button onClick={createAllSamples} disabled={bulkGenerating} className="flex items-center gap-2 rounded-lg border border-indigo-800 px-3 py-2 text-sm text-indigo-300 hover:bg-indigo-950/30 disabled:opacity-40">
+          {bulkGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Waves className="h-4 w-4" />} Gerar todas as amostras
+        </button>
       </div>
 
       {loading ? <div className="flex h-40 items-center justify-center"><Loader2 className="h-6 w-6 animate-spin text-indigo-400" /></div> : (
