@@ -22,6 +22,7 @@ class SpeechJob(Base):
     input_path = Column(Text, nullable=True)
     reference_source_id = Column(BigInteger, ForeignKey("reference_sources.id", ondelete="SET NULL"), nullable=True)
     transcript_id = Column(BigInteger, ForeignKey("transcripts.id", ondelete="SET NULL"), nullable=True)
+    retry_of_job_id = Column(BigInteger, ForeignKey("speech_jobs.id", ondelete="SET NULL"), nullable=True)
     worker_id = Column(Text, nullable=True)
     lease_expires_at = Column(DateTime(timezone=True), nullable=True)
     heartbeat_at = Column(DateTime(timezone=True), nullable=True)
@@ -30,6 +31,7 @@ class SpeechJob(Base):
     error_code = Column(Text, nullable=True)
     error_message = Column(Text, nullable=True)
     debug_log_path = Column(Text, nullable=True)
+    archived_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     started_at = Column(DateTime(timezone=True), nullable=True)
     finished_at = Column(DateTime(timezone=True), nullable=True)
@@ -47,6 +49,8 @@ class SpeechJob(Base):
         Index("idx_speech_jobs_worker_id", worker_id),
         Index("idx_speech_jobs_lease_expires_at", lease_expires_at),
         Index("idx_speech_jobs_reference_source_id", reference_source_id),
+        Index("idx_speech_jobs_retry_of_job_id", retry_of_job_id),
+        Index("idx_speech_jobs_archived_at", archived_at),
     )
 
 
@@ -66,6 +70,19 @@ class SpeechPreset(Base):
         CheckConstraint("operation IN ('stt','tts')", name="check_speech_presets_operation"),
         UniqueConstraint("operation", "name", name="uq_speech_presets_operation_name"),
     )
+
+
+class SpeechSpeakerProfile(Base):
+    __tablename__ = "speech_speaker_profiles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False, unique=True)
+    mapping_json = Column(JSONB, nullable=False, server_default="{}")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (Index("idx_speech_speaker_profiles_name", name),)
 
 
 class SpeechArtifact(Base):

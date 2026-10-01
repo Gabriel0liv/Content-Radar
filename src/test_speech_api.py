@@ -23,9 +23,11 @@ def _job(**overrides):
         "resolved_config_json": {"model": "small"},
         "reference_source_id": None,
         "transcript_id": None,
+        "retry_of_job_id": None,
         "worker_id": None,
         "error_code": None,
         "error_message": None,
+        "archived_at": None,
         "created_at": now,
         "started_at": None,
         "finished_at": None,
@@ -125,6 +127,51 @@ def test_upload_stt_job_streams_file_to_managed_service():
     assert captured["request"].num_speakers == 2
 
 
+def test_upload_stt_job_accepts_advanced_worker_options():
+    captured = {}
+
+    class FakeService:
+        def create_uploaded_stt_job(self, request, *, filename, chunks):
+            captured["request"] = request
+            captured["bytes"] = b"".join(chunks)
+            return _job(requested_config_json=request.model_dump(exclude_none=True))
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/stt/upload",
+            data={
+                "preset": "balanced",
+                "model": "large-v3",
+                "device": "cuda",
+                "compute_type": "float16",
+                "batch_size": "1",
+                "vad_onset": "0.15",
+                "vad_offset": "0.2",
+                "chunk_size": "45",
+                "diarize_model": "pyannote/custom",
+                "offline": "true",
+                "cache_dir": "D:/models/hf",
+                "export_formats": "txt,srt,vtt",
+            },
+            files={"file": ("voice.mp4", b"abc123", "video/mp4")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    request = captured["request"]
+    assert request.model == "large-v3"
+    assert request.device == "cuda"
+    assert request.compute_type == "float16"
+    assert request.batch_size == 1
+    assert request.vad_onset == 0.15
+    assert request.vad_offset == 0.2
+    assert request.chunk_size == 45
+    assert request.offline is True
+    assert request.export_formats == ["txt", "srt", "vtt"]
+
+
 def test_upload_stt_job_returns_422_for_invalid_speaker_range():
     response = client.post(
         "/speech/jobs/stt/upload",
@@ -132,6 +179,90 @@ def test_upload_stt_job_returns_422_for_invalid_speaker_range():
         files={"file": ("voice.wav", b"abc123", "audio/wav")},
     )
     assert response.status_code == 422
+
+
+def test_upload_stt_job_returns_400_for_unsupported_media_extension():
+    class FakeService:
+        def create_uploaded_stt_job(self, request, *, filename, chunks):
+            raise ValueError("Formato de entrada não suportado")
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/stt/upload",
+            data={"preset": "balanced"},
+            files={"file": ("notes.txt", b"abc123", "text/plain")},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 400
+
+
+def test_create_tts_job_persists_durable_request():
+    captured = {}
+
+    class FakeService:
+        def create_tts_job(self, request):
+            captured["request"] = request
+            return _job(
+                operation="tts",
+                requested_config_json=request.model_dump(exclude_none=True),
+                resolved_config_json={"engine": request.engine, "voice": request.voice},
+            )
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/tts",
+            json={
+                "text": "Olá mundo",
+                "engine": "kokoro",
+                "voice": "pt_br_dora",
+                "output_format": "wav",
+                "speed": 1.05,
+                "normalize_ptbr": True,
+            },
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 201
+    assert response.json()["operation"] == "tts"
+    assert captured["request"].preview is False
+    assert captured["request"].voice == "pt_br_dora"
+
+
+def test_tts_preview_endpoint_forces_preview_mode():
+    captured = {}
+
+    class FakeService:
+        def create_tts_job(self, request):
+            captured["request"] = request
+            return _job(
+                operation="tts",
+                requested_config_json=request.model_dump(exclude_none=True),
+                resolved_config_json={"engine": request.engine, "voice": request.voice, "preview": request.preview},
+            )
+
+    app.dependency_overrides[get_speech_jobs_service] = lambda: FakeService()
+    try:
+        response = client.post(
+            "/speech/jobs/tts/preview",
+            json={"text": "Teste", "engine": "piper", "voice": "pt_br_faber", "preview": False},
+        )
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 201
+    assert captured["request"].preview is True
+
+
+def test_tts_analysis_is_synchronous_and_advisory():
+    response = client.post("/speech/tts/analyze-text", json={"text": "Ola voce"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["success"] is True
+    assert body["analysis"]["original_text"] == "Ola voce"
+    assert body["analysis"]["normalized_text"] == "Ola voce"
+    assert body["analysis"]["has_issues"] is True
 
 
 def test_cancel_queued_job():

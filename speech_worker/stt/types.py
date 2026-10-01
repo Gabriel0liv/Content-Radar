@@ -18,12 +18,16 @@ class SttResolvedConfig(BaseModel):
     min_speakers: int | None = Field(default=None, ge=1)
     max_speakers: int | None = Field(default=None, ge=1)
     speaker_profile: str | None = None
+    speaker_mapping: dict[str, str] = Field(default_factory=dict)
     formats: str = "txt json srt vtt"
-    vad_onset: float = 0.5
-    vad_offset: float = 0.363
+    export_formats: list[str] = Field(default_factory=lambda: ["txt", "json", "srt", "vtt"])
+    vad_onset: float = Field(default=0.5, ge=0, le=1)
+    vad_offset: float = Field(default=0.363, ge=0, le=1)
     chunk_size: int = Field(default=30, ge=1)
     initial_prompt: str | None = None
     diarize_model: str = "pyannote/speaker-diarization-3.1"
+    offline: bool = False
+    cache_dir: str | None = None
 
 
 class NormalizedWord(BaseModel):

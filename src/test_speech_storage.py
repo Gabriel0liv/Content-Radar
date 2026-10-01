@@ -41,3 +41,28 @@ def test_stage_input_rejects_path_traversal(tmp_path):
     storage = SpeechStorage(tmp_path)
     with pytest.raises(ValueError):
         storage.stage_input("../voice.mp3", [b"x"])
+
+
+@pytest.mark.parametrize("filename", [
+    "a.mp3", "a.wav", "a.mp4", "a.mkv", "a.mov", "a.m4a", "a.webm",
+    "UPPER.WAV",
+])
+def test_stage_input_accepts_supported_audio_video_extensions(tmp_path, filename):
+    storage = SpeechStorage(tmp_path)
+    path = storage.stage_input(filename, [b"media"])
+    assert path.read_bytes() == b"media"
+
+
+@pytest.mark.parametrize("filename", ["notes.txt", "payload.exe", "archive.zip", "audio"])
+def test_stage_input_rejects_unsupported_extensions(tmp_path, filename):
+    storage = SpeechStorage(tmp_path)
+    with pytest.raises(ValueError, match="Formato"):
+        storage.stage_input(filename, [b"x"])
+
+
+def test_stage_input_rejects_empty_payload_and_cleans_directory(tmp_path):
+    storage = SpeechStorage(tmp_path)
+    with pytest.raises(ValueError, match="vazio"):
+        storage.stage_input("empty.wav", [])
+    inputs = tmp_path.resolve() / "inputs"
+    assert not inputs.exists() or list(inputs.iterdir()) == []

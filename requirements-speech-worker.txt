@@ -1,0 +1,12 @@
+# Speech worker runtime for Python 3.11.
+# Install the shared application dependencies first so the worker can use
+# PostgreSQL models/repositories and the native Speech Suite queue.
+-r requirements.txt
+
+# Heavy/optional speech runtime. These are intentionally kept out of the
+# main API dependency set.
+torch
+whisperx
+kokoro>=0.1.9
+piper-tts>=1.2.0
+soundfile

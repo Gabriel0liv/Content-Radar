@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Library, Lightbulb, Radar, Search, Telescope } from "lucide-react";
+import { Headphones, Library, Lightbulb, Radar, Search, Telescope } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const menuItems = [
@@ -10,6 +10,7 @@ const menuItems = [
   { name: "Case Radar", href: "/case-radar", icon: Telescope },
   { name: "Pesquisas", href: "/search-configs", icon: Search },
   { name: "Biblioteca", href: "/references", icon: Library },
+  { name: "Áudio", href: "/audio", icon: Headphones },
   { name: "Ideias", href: "/ideas", icon: Lightbulb },
 ];
 

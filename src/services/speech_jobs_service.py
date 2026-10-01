@@ -3,16 +3,24 @@ from __future__ import annotations
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Iterable
+from typing import Any, Iterable
 
 from sqlalchemy.orm import Session
 
 from src.models.reference import ReferenceSource
 from src.repositories.speech_jobs import SpeechJobRepository
-from src.schemas.speech import SpeechSttOptions
-from src.schemas.speech_jobs import SpeechSttJobCreate
-from src.services.speech_presets import resolve_stt_config
+from src.schemas.speech_jobs import SpeechSttJobCreate, SpeechTtsJobCreate
+from src.services.speech_assets_service import SpeechAssetsService
+from src.services.speech_presets_service import SpeechPresetsService
+from src.services.speech_speaker_profiles_service import SpeechSpeakerProfilesService
 from src.services.speech_storage import SpeechStorage
+from speech_worker.tts.ptbr_text import analyze_ptbr_text, normalize_ptbr_text
+
+
+_DEFAULT_VOICE_SAMPLE_TEXT = (
+    "Olá! Esta é uma amostra de voz em português do Brasil para comparar ritmo, "
+    "clareza, entonação e naturalidade."
+)
 
 
 class SpeechReferenceNotFoundError(ValueError):
@@ -23,32 +31,106 @@ class SpeechJobsService:
     def __init__(self, db: Session, storage: SpeechStorage | None = None) -> None:
         self.db = db
         self.repo = SpeechJobRepository(db)
+        self.presets = SpeechPresetsService(db)
+        self.speaker_profiles = SpeechSpeakerProfilesService(db)
         self.storage = storage or SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech"))
+        self.assets = SpeechAssetsService(self.storage)
 
     def _validate_reference(self, reference_source_id: int | None) -> None:
         if reference_source_id is not None and self.db.get(ReferenceSource, reference_source_id) is None:
             raise SpeechReferenceNotFoundError("Referência não encontrada")
 
-    @staticmethod
-    def _resolve_request(request: SpeechSttJobCreate) -> tuple[dict, dict]:
+    def _resolve_stt_request(self, request: SpeechSttJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
         requested = request.model_dump(exclude_none=True)
-        options = SpeechSttOptions(
-            preset=request.preset,
-            language=request.language,
-            identify_speakers=request.diarization,
-            num_speakers=request.num_speakers,
-            min_speakers=request.min_speakers,
-            max_speakers=request.max_speakers,
-            quiet_speech=request.quiet_speech,
-            initial_prompt=request.initial_prompt,
-        )
-        resolved = resolve_stt_config(options).model_dump(exclude_none=True)
-        resolved["diarize_model"] = os.getenv("SPEECH_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1")
+        base = self.presets.resolve_stt_preset(request.preset)
+        resolved: dict[str, Any] = {
+            "model": base.get("model", "medium"),
+            "language": base.get("language"),
+            "device": base.get("device", "auto"),
+            "compute_type": base.get("compute_type", "int8"),
+            "batch_size": base.get("batch_size", 2),
+            "no_diarization": base.get("no_diarization", not request.diarization),
+            "num_speakers": base.get("num_speakers"),
+            "min_speakers": base.get("min_speakers"),
+            "max_speakers": base.get("max_speakers"),
+            "speaker_profile": None,
+            "speaker_mapping": {},
+            "vad_onset": base.get("vad_onset", 0.5),
+            "vad_offset": base.get("vad_offset", 0.363),
+            "chunk_size": base.get("chunk_size", 30),
+            "initial_prompt": base.get("initial_prompt"),
+            "diarize_model": base.get("diarize_model") or os.getenv("SPEECH_DIARIZE_MODEL", "pyannote/speaker-diarization-3.1"),
+            "offline": bool(base.get("offline", False)),
+            "cache_dir": base.get("cache_dir") or os.getenv("HF_HOME"),
+            "export_formats": list(base.get("export_formats") or ["txt", "json", "srt", "vtt"]),
+        }
+        resolved["language"] = request.language if request.language is not None else resolved["language"]
+        resolved["no_diarization"] = not request.diarization
+        resolved["num_speakers"] = request.num_speakers
+        resolved["min_speakers"] = None if request.num_speakers is not None else request.min_speakers
+        resolved["max_speakers"] = None if request.num_speakers is not None else request.max_speakers
+        resolved["initial_prompt"] = request.initial_prompt if request.initial_prompt is not None else resolved["initial_prompt"]
+        if request.speaker_profile:
+            profile = self.speaker_profiles.get_profile(request.speaker_profile)
+            if profile is None:
+                raise ValueError("Perfil de speakers não encontrado")
+            resolved["speaker_profile"] = profile.name
+            resolved["speaker_mapping"] = dict(profile.mapping_json or {})
+        if request.quiet_speech:
+            resolved["vad_onset"] = 0.1
+            resolved["vad_offset"] = 0.1
+        overrides = {
+            "model": request.model,
+            "device": request.device,
+            "compute_type": request.compute_type,
+            "batch_size": request.batch_size,
+            "vad_onset": request.vad_onset,
+            "vad_offset": request.vad_offset,
+            "chunk_size": request.chunk_size,
+            "diarize_model": request.diarize_model,
+            "offline": request.offline,
+            "cache_dir": request.cache_dir,
+            "export_formats": request.export_formats,
+        }
+        for key, value in overrides.items():
+            if value is not None:
+                resolved[key] = value
+        resolved["formats"] = " ".join(resolved["export_formats"])
+        return requested, resolved
+
+    def _resolve_tts_request(self, request: SpeechTtsJobCreate) -> tuple[dict[str, Any], dict[str, Any]]:
+        requested = request.model_dump(exclude_none=True)
+        base: dict[str, Any] = {}
+        if request.preset:
+            base = self.presets.resolve_tts_preset(request.preset)
+        resolved = {
+            "engine": request.engine or base.get("engine", "kokoro"),
+            "voice": request.voice or base.get("voice", "pt_br_dora"),
+            "output_format": request.output_format or base.get("output_format", "wav"),
+            "speed": request.speed if request.speed is not None else float(base.get("speed", 1.0)),
+            "language": request.language or base.get("language", "pt-br"),
+            "normalize_ptbr": bool(request.normalize_ptbr),
+            "analyze_ptbr": bool(request.analyze_ptbr),
+            "preview": bool(request.preview),
+            "preview_chars": int(request.preview_chars),
+            "device": str(base.get("device") or os.getenv("SPEECH_TTS_DEVICE", "cpu")),
+            "cache_dir": base.get("cache_dir") or os.getenv("SPEECH_TTS_CACHE"),
+            "offline": bool(base.get("offline", False)),
+            "chunk_chars": int(base.get("chunk_chars", 400)),
+        }
+        effective = request.text
+        if resolved["normalize_ptbr"]:
+            effective = normalize_ptbr_text(effective)
+        if resolved["preview"]:
+            effective = effective[: resolved["preview_chars"]].rstrip()
+        resolved["effective_text"] = effective
+        if resolved["analyze_ptbr"]:
+            resolved["analysis"] = analyze_ptbr_text(request.text)
         return requested, resolved
 
     def create_stt_job(self, request: SpeechSttJobCreate):
         self._validate_reference(request.reference_source_id)
-        requested, resolved = self._resolve_request(request)
+        requested, resolved = self._resolve_stt_request(request)
         return self.repo.create(
             operation="stt",
             requested_config_json=requested,
@@ -57,15 +139,9 @@ class SpeechJobsService:
             reference_source_id=request.reference_source_id,
         )
 
-    def create_uploaded_stt_job(
-        self,
-        request: SpeechSttJobCreate,
-        *,
-        filename: str,
-        chunks: Iterable[bytes],
-    ):
+    def create_uploaded_stt_job(self, request: SpeechSttJobCreate, *, filename: str, chunks: Iterable[bytes]):
         self._validate_reference(request.reference_source_id)
-        requested, resolved = self._resolve_request(request)
+        requested, resolved = self._resolve_stt_request(request)
         staged_path = self.storage.stage_input(filename, chunks)
         try:
             return self.repo.create(
@@ -83,14 +159,139 @@ class SpeechJobsService:
                 pass
             raise
 
+    def create_tts_job(self, request: SpeechTtsJobCreate):
+        requested, resolved = self._resolve_tts_request(request)
+        return self.repo.create(
+            operation="tts",
+            requested_config_json=requested,
+            resolved_config_json=resolved,
+            input_path=None,
+            reference_source_id=None,
+        )
+
+    def create_voice_sample_job(self, voice_id: str, *, text: str | None = None):
+        voice = self.assets.get_voice(voice_id)
+        sample_text = (text or _DEFAULT_VOICE_SAMPLE_TEXT).strip()
+        if not sample_text:
+            raise ValueError("Texto da amostra não pode ser vazio")
+        requested = {"mode": "voice_sample", "voice_id": voice_id, "text": sample_text}
+        resolved = {
+            "mode": "voice_sample",
+            "engine": voice["engine"],
+            "voice": voice_id,
+            "effective_text": sample_text,
+            "output_format": "wav",
+            "speed": 1.0,
+            "language": voice["language"],
+            "device": os.getenv("SPEECH_TTS_DEVICE", "cpu"),
+            "cache_dir": os.getenv("SPEECH_TTS_CACHE"),
+            "offline": False,
+            "chunk_chars": 400,
+        }
+        return self.repo.create(operation="tts", requested_config_json=requested, resolved_config_json=resolved, input_path=None, reference_source_id=None)
+
+    def create_all_voice_sample_jobs(self, *, text: str | None = None) -> list[Any]:
+        return [self.create_voice_sample_job(voice["id"], text=text) for voice in self.assets.list_voices()]
+
+    def create_voice_compare_job(self, *, text: str, voice_ids: list[str] | None = None, language: str = "pt-br", markdown_report: bool = True):
+        clean_text = text.strip()
+        if not clean_text:
+            raise ValueError("Texto da comparação não pode ser vazio")
+        normalized_voice_ids: list[str] = []
+        for voice_id in voice_ids or []:
+            self.assets.get_voice(voice_id)
+            if voice_id not in normalized_voice_ids:
+                normalized_voice_ids.append(voice_id)
+        requested = {"mode": "voice_compare", "text": clean_text, "voice_ids": normalized_voice_ids, "language": language, "markdown_report": markdown_report}
+        resolved = {
+            "mode": "voice_compare",
+            "effective_text": clean_text,
+            "voice_ids": normalized_voice_ids,
+            "language": language,
+            "device": os.getenv("SPEECH_TTS_DEVICE", "cpu"),
+            "cache_dir": os.getenv("SPEECH_TTS_CACHE"),
+            "offline": False,
+            "speed": 1.0,
+            "compare_report_markdown": markdown_report,
+        }
+        return self.repo.create(operation="tts", requested_config_json=requested, resolved_config_json=resolved, input_path=None, reference_source_id=None)
+
+    def analyze_tts_text(self, text: str) -> dict[str, Any]:
+        return analyze_ptbr_text(text)
+
     def get_job(self, job_id: int):
         return self.repo.get(job_id)
 
-    def list_jobs(self, limit: int = 50):
-        return self.repo.list_recent(limit=max(1, min(200, limit)))
+    def list_jobs(self, limit: int = 50, *, operation: str | None = None, status: str | None = None, include_archived: bool = False):
+        return self.repo.list_recent(limit=max(1, min(200, limit)), operation=operation, status=status, include_archived=include_archived)
+
+    def list_artifacts(self, job_id: int):
+        if self.repo.get(job_id) is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        return self.repo.list_artifacts(job_id)
+
+    def list_speaker_mappings(self, job_id: int):
+        if self.repo.get(job_id) is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        return self.repo.list_speaker_mappings(job_id)
+
+    def set_speaker_mapping(self, job_id: int, raw_speaker: str, display_name: str):
+        return self.repo.set_speaker_mapping(job_id, raw_speaker, display_name)
 
     def cancel_job(self, job_id: int):
         return self.repo.request_cancel(job_id)
+
+    def retry_job(self, job_id: int):
+        return self.repo.retry(job_id)
+
+    def archive_job(self, job_id: int):
+        return self.repo.archive(job_id)
+
+    def _artifact_path(self, job_id: int, artifact: Any) -> Path:
+        storage_key = str(getattr(artifact, "storage_key", "") or "").strip()
+        if not storage_key:
+            raise ValueError("Artefato não possui caminho de armazenamento")
+        path = (self.storage.root / storage_key).resolve()
+        self.storage.safe_storage_key(path)
+        job_root = self.storage.artifacts_dir(job_id).resolve()
+        sample_root = (self.storage.root / "assets" / "voice_samples").resolve()
+        allowed = False
+        try:
+            path.relative_to(job_root)
+            allowed = True
+        except ValueError:
+            if getattr(artifact, "artifact_type", None) == "voice_sample":
+                try:
+                    path.relative_to(sample_root)
+                    allowed = True
+                except ValueError:
+                    pass
+        if not allowed:
+            raise ValueError("Artefato aponta para fora do armazenamento permitido")
+        return path
+
+    def resolve_artifact_download(self, job_id: int, artifact_id: int):
+        artifact = self.repo.get_artifact(job_id, artifact_id)
+        if artifact is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        path = self._artifact_path(job_id, artifact)
+        if not path.is_file():
+            raise FileNotFoundError("Arquivo do artefato não encontrado")
+        return artifact, path
+
+    def delete_artifact(self, job_id: int, artifact_id: int):
+        job = self.repo.get(job_id)
+        if job is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        artifact = self.repo.get_artifact(job_id, artifact_id)
+        if artifact is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        path = self._artifact_path(job_id, artifact)
+        path.unlink(missing_ok=True)
+        deleted = self.repo.delete_artifact(artifact_id)
+        if deleted is None:
+            raise FileNotFoundError("Artefato não encontrado")
+        return deleted
 
     def get_status(self, stale_after_seconds: int = 90) -> dict:
         state = self.repo.latest_worker_state()

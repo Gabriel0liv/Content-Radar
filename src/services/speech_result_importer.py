@@ -31,7 +31,7 @@ class SpeechResultImporter:
         if not full_text:
             raise SpeechResultImportError("Transcrição STT vazia")
 
-        self._persist_artifacts(job.id, result.get("artifacts") or [])
+        self.persist_artifacts(job.id, result.get("artifacts") or [])
 
         if job.reference_source_id is None:
             return None
@@ -85,11 +85,40 @@ class SpeechResultImporter:
         self.db.refresh(job)
         return int(transcript.id)
 
-    def _persist_artifacts(self, job_id: int, artifacts: list[dict]) -> None:
+    def finalize_tts(self, job: SpeechJob, result: dict) -> None:
+        if result.get("kind") not in {"tts", "tts_voice_sample", "tts_voice_compare"}:
+            raise SpeechResultImportError("Resultado não é TTS")
+        artifacts = result.get("artifacts") or []
+        if not artifacts:
+            raise SpeechResultImportError("Resultado TTS não possui artefatos")
+        self.persist_artifacts(job.id, artifacts)
+
+    def _validate_artifact_location(self, job_id: int, artifact: dict, path: Path) -> None:
+        expected_root = self.storage.artifacts_dir(job_id).resolve()
+        try:
+            path.relative_to(expected_root)
+            return
+        except ValueError:
+            pass
+
+        if artifact.get("artifact_type") == "voice_sample":
+            sample_root = (self.storage.root / "assets" / "voice_samples").resolve()
+            try:
+                path.relative_to(sample_root)
+                return
+            except ValueError:
+                pass
+
+        raise SpeechResultImportError("Artefato aponta para fora de diretório gerenciado permitido")
+
+    def persist_artifacts(self, job_id: int, artifacts: list[dict]) -> None:
         for artifact in artifacts:
             storage_key = str(artifact.get("storage_key") or "").strip()
             if not storage_key:
                 continue
+            path = (self.storage.root / storage_key).resolve()
+            self.storage.safe_storage_key(path)
+            self._validate_artifact_location(job_id, artifact, path)
             existing = self.db.execute(
                 select(SpeechArtifact).where(
                     SpeechArtifact.speech_job_id == job_id,
@@ -117,11 +146,7 @@ class SpeechResultImporter:
             storage_key = str(artifact.get("storage_key") or "")
             path = (self.storage.root / storage_key).resolve()
             self.storage.safe_storage_key(path)
-            expected_root = self.storage.artifacts_dir(job_id).resolve()
-            try:
-                path.relative_to(expected_root)
-            except ValueError as exc:
-                raise SpeechResultImportError("Artefato aponta para fora do diretório do job") from exc
+            self._validate_artifact_location(job_id, artifact, path)
             if path.is_file():
                 return path.read_text(encoding="utf-8")
         return None

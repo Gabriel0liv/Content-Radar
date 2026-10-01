@@ -44,6 +44,10 @@ jobs:
           pip install -r requirements.txt pytest
       - name: Migration smoke
         run: alembic upgrade head
+      - name: Speech migration boundary smoke
+        run: |
+          alembic downgrade 0021_case_radar_foundation
+          alembic upgrade head
       - name: Case Radar targeted suite
         run: >-
           python -m pytest -q
@@ -74,8 +78,25 @@ jobs:
           src/test_speech_job_repository.py
           src/test_speech_jobs_service.py
           src/test_speech_worker_bootstrap.py
+          src/test_speech_worker_protocol.py
           src/test_speech_result_importer.py
           src/test_speech_api.py
+          src/test_speech_presets.py
+          src/test_speech_settings_service.py
+          src/test_speech_storage.py
+          src/test_speech_tts_chunking.py
+          src/test_speech_tts_jobs.py
+          src/test_speech_tts_registry.py
+          src/test_speech_tts_text.py
+          src/test_speech_voice_registry.py
+          src/test_speech_voice_samples.py
+          src/test_speech_voice_compare.py
+          src/test_speech_capabilities.py
+          src/test_speech_diagnostics.py
+          src/test_speech_artifact_api.py
+          src/test_speech_history.py
+          src/test_speech_dashboard.py
+          src/test_speech_frontend_contract.py
       - name: Full backend suite
         run: python -m pytest -q
       - name: Real public provider smoke (informational)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import Any
 
 
 class JobCancelled(RuntimeError):
@@ -24,7 +25,11 @@ class WorkerCapabilities:
     vram_mb: int | None = None
     stt_ready: bool = False
     diarization_ready: bool = False
-    tts_engines: list[str] = field(default_factory=list)
+    tts_engines: list[Any] = field(default_factory=list)
+    compute_types: list[str] = field(default_factory=list)
+    output_formats: list[str] = field(default_factory=list)
+    espeak_available: bool = False
+    hf_access_present: bool = False
 
     def as_dict(self) -> dict:
         return {
@@ -39,7 +44,11 @@ class WorkerCapabilities:
             "vram_mb": self.vram_mb,
             "stt_ready": self.stt_ready,
             "diarization_ready": self.diarization_ready,
-            "tts_engines": list(self.tts_engines),
+            "tts_engines": [dict(item) if isinstance(item, dict) else item for item in self.tts_engines],
+            "compute_types": list(self.compute_types),
+            "output_formats": list(self.output_formats),
+            "espeak_available": self.espeak_available,
+            "hf_access_present": self.hf_access_present,
         }
 
 

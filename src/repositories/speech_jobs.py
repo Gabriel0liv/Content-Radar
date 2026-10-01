@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from src.models.speech import SpeechJob, SpeechWorkerState
+from src.models.speech import SpeechArtifact, SpeechJob, SpeechSpeakerMapping, SpeechWorkerState
 
 
 class SpeechJobOwnershipError(RuntimeError):
@@ -28,6 +29,7 @@ class SpeechJobRepository:
         input_path: str | None = None,
         reference_source_id: int | None = None,
         resolved_config_json: dict | None = None,
+        retry_of_job_id: int | None = None,
     ) -> SpeechJob:
         job = SpeechJob(
             operation=operation,
@@ -35,6 +37,7 @@ class SpeechJobRepository:
             resolved_config_json=resolved_config_json,
             input_path=input_path,
             reference_source_id=reference_source_id,
+            retry_of_job_id=retry_of_job_id,
         )
         self.db.add(job)
         self.db.commit()
@@ -44,9 +47,126 @@ class SpeechJobRepository:
     def get(self, job_id: int) -> SpeechJob | None:
         return self.db.get(SpeechJob, job_id)
 
-    def list_recent(self, limit: int = 50) -> list[SpeechJob]:
-        stmt = select(SpeechJob).order_by(SpeechJob.created_at.desc(), SpeechJob.id.desc()).limit(limit)
+    def list_recent(
+        self,
+        limit: int = 50,
+        *,
+        operation: str | None = None,
+        status: str | None = None,
+        include_archived: bool = False,
+    ) -> list[SpeechJob]:
+        stmt = select(SpeechJob)
+        if operation is not None:
+            stmt = stmt.where(SpeechJob.operation == operation)
+        if status is not None:
+            stmt = stmt.where(SpeechJob.status == status)
+        if not include_archived:
+            stmt = stmt.where(SpeechJob.archived_at.is_(None))
+        stmt = stmt.order_by(SpeechJob.created_at.desc(), SpeechJob.id.desc()).limit(limit)
         return list(self.db.execute(stmt).scalars())
+
+    def archive(self, job_id: int) -> SpeechJob | None:
+        job = self.get(job_id)
+        if job is None:
+            return None
+        if job.archived_at is None:
+            job.archived_at = self._now()
+            self.db.commit()
+            self.db.refresh(job)
+        return job
+
+    def retry(self, job_id: int) -> SpeechJob | None:
+        original = self.get(job_id)
+        if original is None:
+            return None
+        return self.create(
+            operation=original.operation,
+            requested_config_json=deepcopy(original.requested_config_json or {}),
+            resolved_config_json=deepcopy(original.resolved_config_json) if original.resolved_config_json is not None else None,
+            input_path=original.input_path,
+            reference_source_id=original.reference_source_id,
+            retry_of_job_id=original.id,
+        )
+
+    def add_artifact(
+        self,
+        job_id: int,
+        *,
+        artifact_type: str,
+        storage_key: str,
+        filename: str,
+        mime_type: str | None = None,
+        size_bytes: int | None = None,
+    ) -> SpeechArtifact:
+        artifact = SpeechArtifact(
+            speech_job_id=job_id,
+            artifact_type=artifact_type,
+            storage_key=storage_key,
+            filename=filename,
+            mime_type=mime_type,
+            size_bytes=size_bytes,
+        )
+        self.db.add(artifact)
+        self.db.commit()
+        self.db.refresh(artifact)
+        return artifact
+
+    def list_artifacts(self, job_id: int, *, artifact_type: str | None = None) -> list[SpeechArtifact]:
+        stmt = select(SpeechArtifact).where(SpeechArtifact.speech_job_id == job_id)
+        if artifact_type is not None:
+            stmt = stmt.where(SpeechArtifact.artifact_type == artifact_type)
+        stmt = stmt.order_by(SpeechArtifact.created_at, SpeechArtifact.id)
+        return list(self.db.execute(stmt).scalars())
+
+    def get_artifact(self, job_id: int, artifact_id: int) -> SpeechArtifact | None:
+        stmt = select(SpeechArtifact).where(
+            SpeechArtifact.id == artifact_id,
+            SpeechArtifact.speech_job_id == job_id,
+        )
+        return self.db.execute(stmt).scalar_one_or_none()
+
+    def delete_artifact(self, artifact_id: int) -> SpeechArtifact | None:
+        artifact = self.db.get(SpeechArtifact, artifact_id)
+        if artifact is None:
+            return None
+        self.db.delete(artifact)
+        self.db.commit()
+        return artifact
+
+    def list_speaker_mappings(self, job_id: int) -> list[SpeechSpeakerMapping]:
+        stmt = (
+            select(SpeechSpeakerMapping)
+            .where(SpeechSpeakerMapping.speech_job_id == job_id)
+            .order_by(SpeechSpeakerMapping.raw_speaker, SpeechSpeakerMapping.id)
+        )
+        return list(self.db.execute(stmt).scalars())
+
+    def set_speaker_mapping(self, job_id: int, raw_speaker: str, display_name: str) -> SpeechSpeakerMapping:
+        job = self.get(job_id)
+        if job is None:
+            raise FileNotFoundError("Job de áudio não encontrado")
+        normalized_raw = raw_speaker.strip()
+        normalized_display = display_name.strip()
+        if not normalized_raw or not normalized_display:
+            raise ValueError("Speaker e nome de exibição são obrigatórios")
+        stmt = select(SpeechSpeakerMapping).where(
+            SpeechSpeakerMapping.speech_job_id == job_id,
+            SpeechSpeakerMapping.raw_speaker == normalized_raw,
+        )
+        mapping = self.db.execute(stmt).scalar_one_or_none()
+        if mapping is None:
+            mapping = SpeechSpeakerMapping(
+                speech_job_id=job_id,
+                transcript_id=job.transcript_id,
+                raw_speaker=normalized_raw,
+                display_name=normalized_display,
+            )
+            self.db.add(mapping)
+        else:
+            mapping.display_name = normalized_display
+        self.db.commit()
+        self.db.refresh(mapping)
+        return mapping
 
     def request_cancel(self, job_id: int) -> SpeechJob | None:
         job = self.get(job_id)
@@ -73,7 +193,11 @@ class SpeechJobRepository:
         now = self._now()
         stmt = (
             select(SpeechJob)
-            .where(SpeechJob.status == "queued", SpeechJob.operation.in_(tuple(operations)))
+            .where(
+                SpeechJob.status == "queued",
+                SpeechJob.archived_at.is_(None),
+                SpeechJob.operation.in_(tuple(operations)),
+            )
             .order_by(SpeechJob.created_at, SpeechJob.id)
             .with_for_update(skip_locked=True)
             .limit(1)
@@ -200,7 +324,7 @@ class SpeechJobRepository:
     def queue_counts(self) -> dict[str, int]:
         rows = self.db.execute(
             select(SpeechJob.status, func.count(SpeechJob.id))
-            .where(SpeechJob.status.in_(("queued", "running")))
+            .where(SpeechJob.status.in_(("queued", "running")), SpeechJob.archived_at.is_(None))
             .group_by(SpeechJob.status)
         ).all()
         counts = {"queued": 0, "running": 0}

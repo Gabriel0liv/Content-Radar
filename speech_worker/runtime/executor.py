@@ -10,6 +10,7 @@ from speech_worker.stt.engine import WhisperXSttEngine
 from speech_worker.stt.errors import SttCancelled
 from speech_worker.stt.subtitles import cards_from_segments, render_json, render_srt, render_txt, render_vtt
 from speech_worker.stt.types import SttResolvedConfig
+from speech_worker.tts.runner import TTSRunner
 
 
 _ARTIFACT_META = {
@@ -26,16 +27,21 @@ class SpeechExecutor:
         *,
         storage: SpeechStorage | None = None,
         engine: WhisperXSttEngine | None = None,
+        tts_runner: TTSRunner | None = None,
     ) -> None:
         self.storage = storage or SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech"))
         self.engine = engine or WhisperXSttEngine()
+        self.tts_runner = tts_runner or TTSRunner(storage=self.storage)
 
     def execute(self, job, progress_callback, cancel_check) -> dict:
         if cancel_check():
             raise JobCancelled("Job cancelado antes da execução")
-        if getattr(job, "operation", None) != "stt":
-            raise UnsupportedOperationError(f"Operação {getattr(job, 'operation', None)!r} ainda não possui engine instalada")
-        return self._execute_stt(job, progress_callback, cancel_check)
+        operation = getattr(job, "operation", None)
+        if operation == "stt":
+            return self._execute_stt(job, progress_callback, cancel_check)
+        if operation == "tts":
+            return self.tts_runner.run(job, progress_callback, cancel_check)
+        raise UnsupportedOperationError(f"Operação {operation!r} não suportada pelo worker")
 
     def _execute_stt(self, job, progress_callback, cancel_check) -> dict:
         if not getattr(job, "input_path", None):
@@ -51,17 +57,8 @@ class SpeechExecutor:
 
         progress_callback("preparing_audio", 5, "Preparando áudio")
         try:
-            convert_to_wav(
-                input_path,
-                work_wav,
-                cancel_check=cancel_check,
-            )
-            result = self.engine.transcribe(
-                work_wav,
-                config,
-                progress_callback,
-                cancel_check,
-            )
+            convert_to_wav(input_path, work_wav, cancel_check=cancel_check)
+            result = self.engine.transcribe(work_wav, config, progress_callback, cancel_check)
             if cancel_check():
                 raise JobCancelled("Job cancelado antes da exportação")
 
@@ -69,14 +66,18 @@ class SpeechExecutor:
             payload = result.model_dump(mode="json")
             segment_dicts = [segment.model_dump(mode="json") for segment in result.segments]
             cards = cards_from_segments(segment_dicts)
-            requested_formats = {part.lower() for part in config.formats.split() if part.lower() in _ARTIFACT_META}
+            speaker_map = dict(config.speaker_mapping or {})
+            requested_formats = {
+                part.lower()
+                for part in config.formats.split()
+                if part.lower() in _ARTIFACT_META
+            }
             artifacts: list[dict] = []
-
             renderers = {
                 "json": lambda: render_json(payload),
-                "txt": lambda: render_txt(segment_dicts),
-                "srt": lambda: render_srt(cards, show_speaker=result.diarized),
-                "vtt": lambda: render_vtt(cards, show_speaker=result.diarized),
+                "txt": lambda: render_txt(segment_dicts, speaker_map=speaker_map),
+                "srt": lambda: render_srt(cards, speaker_map=speaker_map, show_speaker=result.diarized),
+                "vtt": lambda: render_vtt(cards, speaker_map=speaker_map, show_speaker=result.diarized),
             }
             for format_name in ("json", "txt", "srt", "vtt"):
                 if format_name not in requested_formats:
@@ -99,6 +100,8 @@ class SpeechExecutor:
             return {
                 "kind": "stt",
                 "normalized": payload,
+                "speaker_profile": config.speaker_profile,
+                "speaker_mapping": speaker_map,
                 "artifacts": artifacts,
             }
         except SttCancelled as exc:
