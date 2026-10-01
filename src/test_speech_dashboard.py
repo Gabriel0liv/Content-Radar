@@ -1,22 +1,29 @@
 from datetime import datetime, timezone
-from pathlib import Path
 from types import SimpleNamespace
 
-from src.services.speech_jobs_service import SpeechJobsService
+from src.services.speech_dashboard_service import SpeechDashboardService
 from src.services.speech_storage import SpeechStorage
 
 
-class FakeRepo:
-    def dashboard_counts(self, since):
-        assert since.tzinfo is not None
-        return {
-            "total_jobs": 20,
-            "jobs_completed": 15,
-            "jobs_failed": 3,
-            "transcriptions_today": 4,
-            "tts_today": 6,
-        }
+class FakeRow:
+    total_jobs = 20
+    jobs_completed = 15
+    jobs_failed = 3
+    transcriptions_today = 4
+    tts_today = 6
 
+
+class FakeExecuteResult:
+    def one(self):
+        return FakeRow()
+
+
+class FakeDb:
+    def execute(self, stmt):
+        return FakeExecuteResult()
+
+
+class FakeRepo:
     def list_recent(self, limit=50, **kwargs):
         assert limit == 6
         return [
@@ -36,6 +43,14 @@ class FakeRepo:
             )
         ]
 
+    def latest_worker_state(self):
+        return SimpleNamespace(
+            capabilities_json={"tts_engines": [{"id": "kokoro", "available": True}]}
+        )
+
+    def queue_counts(self):
+        return {"queued": 2, "running": 1}
+
 
 class FakeAssets:
     def list_voices(self, *, capabilities=None):
@@ -52,21 +67,12 @@ def test_dashboard_matches_legacy_useful_metrics_without_local_paths(tmp_path):
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_bytes(b"123456")
 
-    service = SpeechJobsService.__new__(SpeechJobsService)
-    service.repo = FakeRepo()
-    service.assets = FakeAssets()
-    service.storage = storage
-    service.get_status = lambda: {
-        "mode": "native",
-        "queue": {"queued": 2, "running": 1},
-        "worker": {
-            "online": True,
-            "worker_id": "speech-1",
-            "last_heartbeat_at": datetime.now(timezone.utc),
-            "capabilities": {"tts_engines": [{"id": "kokoro", "available": True}]},
-        },
-    }
-
+    service = SpeechDashboardService(
+        FakeDb(),
+        storage=storage,
+        repo=FakeRepo(),
+        assets=FakeAssets(),
+    )
     dashboard = service.get_dashboard()
 
     assert dashboard["transcriptions_today"] == 4
