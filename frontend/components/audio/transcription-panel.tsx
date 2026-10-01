@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, ChevronDown, ChevronUp, Loader2, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { speechApi } from "@/lib/speech-api";
@@ -9,10 +9,12 @@ import { TranscriptionResult } from "@/components/audio/transcription-result";
 
 const ACCEPT = ".mp3,.wav,.mp4,.mkv,.mov,.m4a,.webm";
 const EXPORT_FORMATS = ["txt", "json", "srt", "vtt"] as const;
+const TERMINAL = new Set(["completed", "failed", "cancelled"]);
 
 export function TranscriptionPanel() {
-  const [file, setFile] = useState<File | null>(null);
-  const [job, setJob] = useState<SpeechJob | null>(null);
+  const [files, setFiles] = useState<File[]>([]);
+  const [jobs, setJobs] = useState<SpeechJob[]>([]);
+  const [selectedJobId, setSelectedJobId] = useState<number | null>(null);
   const [capabilities, setCapabilities] = useState<SpeechCapabilities | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [advanced, setAdvanced] = useState(false);
@@ -25,48 +27,58 @@ export function TranscriptionPanel() {
     device: "auto",
     compute_type: "int8",
   });
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     speechApi.getCapabilities().then(setCapabilities).catch(() => undefined);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
   }, []);
+
+  const hasActiveJobs = jobs.some((item) => !TERMINAL.has(item.status));
+  useEffect(() => {
+    if (!hasActiveJobs) return;
+    let cancelled = false;
+    const refresh = async () => {
+      const current = await Promise.all(jobs.map(async (item) => {
+        if (TERMINAL.has(item.status)) return item;
+        try { return await speechApi.getJob(item.id); }
+        catch { return item; }
+      }));
+      if (!cancelled) setJobs(current);
+    };
+    void refresh();
+    const timer = setInterval(refresh, 2500);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [hasActiveJobs, jobs.map((item) => `${item.id}:${item.status}`).join("|")]);
+
+  const selectedJob = useMemo(
+    () => jobs.find((item) => item.id === selectedJobId) || jobs[0] || null,
+    [jobs, selectedJobId],
+  );
 
   const caps = capabilities?.capabilities || {};
   const cudaAvailable = Boolean(caps.cuda_available);
   const diarizationReady = Boolean(caps.diarization_ready);
 
-  const poll = (jobId: number) => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    const run = async () => {
-      try {
-        const fresh = await speechApi.getJob(jobId);
-        setJob(fresh);
-        if (["completed", "failed", "cancelled"].includes(fresh.status) && pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-      } catch {
-        // transient API failures must not stop an active job
-      }
-    };
-    void run();
-    pollRef.current = setInterval(run, 2500);
-  };
-
   const submit = async () => {
-    if (!file) return;
+    if (!files.length) return;
     setSubmitting(true);
-    try {
-      const created = await speechApi.uploadStt(file, options);
-      setJob(created);
-      poll(created.id);
-      toast.success("Transcrição adicionada à fila");
-    } catch (e: any) {
-      toast.error("Não foi possível iniciar a transcrição", { description: e.message });
-    } finally {
-      setSubmitting(false);
+    const created: SpeechJob[] = [];
+    const failures: string[] = [];
+    for (const file of files) {
+      try {
+        created.push(await speechApi.uploadStt(file, options));
+      } catch (e: any) {
+        failures.push(`${file.name}: ${e.message}`);
+      }
     }
+    if (created.length) {
+      setJobs(created);
+      setSelectedJobId(created[0].id);
+      toast.success(created.length === 1 ? "Transcrição adicionada à fila" : `${created.length} transcrições adicionadas à fila`);
+    }
+    if (failures.length) {
+      toast.error(`${failures.length} arquivo(s) não puderam ser enfileirados`, { description: failures.slice(0, 3).join(" · ") });
+    }
+    setSubmitting(false);
   };
 
   const setNumber = (key: keyof SttUploadOptions, raw: string) => setOptions((old) => ({ ...old, [key]: raw === "" ? undefined : Number(raw) }));
@@ -79,13 +91,13 @@ export function TranscriptionPanel() {
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-slate-800 bg-[#0b101c]/60 p-5">
-        {capabilities && !capabilities.worker_online && <div className="mb-4 flex gap-2 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-300"><AlertTriangle className="h-4 w-4 shrink-0" />O speech worker está offline. O job pode ser criado, mas ficará na fila até um worker compatível voltar.</div>}
+        {capabilities && !capabilities.worker_online && <div className="mb-4 flex gap-2 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-300"><AlertTriangle className="h-4 w-4 shrink-0" />O speech worker está offline. Os jobs podem ser criados, mas ficarão na fila até um worker compatível voltar.</div>}
         <div className="grid gap-4 lg:grid-cols-[1.2fr_1fr]">
           <label className="flex min-h-32 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-slate-700 bg-slate-950/60 p-5 text-center hover:border-indigo-500">
             <Upload className="mb-2 h-6 w-6 text-indigo-400" />
-            <span className="text-sm font-medium text-white">{file ? file.name : "Escolher áudio ou vídeo"}</span>
-            <span className="mt-1 text-xs text-slate-500">MP3, WAV, MP4, MKV, MOV, M4A ou WEBM</span>
-            <input type="file" accept={ACCEPT} className="hidden" onChange={(e) => setFile(e.target.files?.[0] || null)} />
+            <span className="text-sm font-medium text-white">{files.length ? (files.length === 1 ? files[0].name : `${files.length} arquivos selecionados`) : "Escolher áudio ou vídeo"}</span>
+            <span className="mt-1 text-xs text-slate-500">MP3, WAV, MP4, MKV, MOV, M4A ou WEBM · seleção múltipla suportada</span>
+            <input type="file" multiple accept={ACCEPT} className="hidden" onChange={(e) => setFiles(Array.from(e.target.files || []))} />
           </label>
 
           <div className="grid gap-3 sm:grid-cols-2">
@@ -95,6 +107,8 @@ export function TranscriptionPanel() {
             <label className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={options.quiet_speech} onChange={(e) => setOptions((o) => ({ ...o, quiet_speech: e.target.checked }))} /> Fala baixa/sensível</label>
           </div>
         </div>
+
+        {files.length > 1 && <div className="mt-3 max-h-28 overflow-auto rounded-lg border border-slate-800 bg-slate-950/50 p-2 text-xs text-slate-400">{files.map((file) => <div key={`${file.name}:${file.size}`} className="truncate py-0.5">{file.name}</div>)}</div>}
 
         {options.diarization && !diarizationReady && capabilities?.worker_online && <div className="mt-3 rounded-lg border border-amber-900/40 bg-amber-950/20 p-3 text-xs text-amber-300">O worker atual não informa diarização pronta. Verifique WhisperX/pyannote e o acesso Hugging Face no Diagnóstico.</div>}
 
@@ -108,7 +122,7 @@ export function TranscriptionPanel() {
 
         <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_220px]">
           <label className="block text-xs text-slate-400">Prompt inicial<textarea value={options.initial_prompt || ""} onChange={(e) => setOptions((o) => ({ ...o, initial_prompt: e.target.value }))} rows={2} placeholder="Vocabulário, nomes próprios ou contexto opcional..." className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /></label>
-          <label className="text-xs text-slate-400">Vincular à Biblioteca (ID)<input type="number" min={1} value={options.reference_source_id ?? ""} onChange={(e) => setNumber("reference_source_id", e.target.value)} placeholder="Opcional" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /><span className="mt-1 block text-[10px] text-slate-600">Se informado, a transcrição concluída é vinculada à referência existente.</span></label>
+          <label className="text-xs text-slate-400">Vincular à Biblioteca (ID)<input type="number" min={1} value={options.reference_source_id ?? ""} onChange={(e) => setNumber("reference_source_id", e.target.value)} placeholder="Opcional" className="mt-1 w-full rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm text-white" /><span className="mt-1 block text-[10px] text-slate-600">Em lote, todos os arquivos usam a mesma referência quando este ID é informado.</span></label>
         </div>
 
         <div className="mt-4"><div className="text-xs text-slate-400">Arquivos de saída</div><div className="mt-2 flex flex-wrap gap-3">{EXPORT_FORMATS.map((format) => <label key={format} className="flex items-center gap-2 text-sm text-slate-300"><input type="checkbox" checked={(options.export_formats || []).includes(format)} onChange={() => toggleFormat(format)} /> {format.toUpperCase()}</label>)}</div>{(options.export_formats || []).length === 0 && <p className="mt-1 text-xs text-rose-300">Selecione pelo menos um formato.</p>}</div>
@@ -130,18 +144,20 @@ export function TranscriptionPanel() {
         )}
 
         <div className="mt-5 flex items-center justify-between gap-4">
-          <p className="text-xs text-slate-600">A extensão escolhida no navegador é apenas conveniência; o servidor valida o upload.</p>
-          <button onClick={submit} disabled={!file || submitting || (options.export_formats || []).length === 0 || job?.status === "queued" || job?.status === "running"} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null} Transcrever</button>
+          <p className="text-xs text-slate-600">Cada arquivo selecionado vira um job durável independente; a extensão no navegador é só conveniência e o servidor valida cada upload.</p>
+          <button onClick={submit} disabled={!files.length || submitting || (options.export_formats || []).length === 0} className="flex items-center gap-2 rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-40">{submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : null} {files.length > 1 ? `Transcrever ${files.length} arquivos` : "Transcrever"}</button>
         </div>
       </div>
 
-      {job && (
+      {jobs.length > 1 && <div className="rounded-xl border border-slate-800 bg-[#0b101c]/40 p-4"><div className="mb-3 text-xs font-semibold uppercase tracking-wide text-slate-500">Lote atual</div><div className="flex flex-wrap gap-2">{jobs.map((item, index) => <button key={item.id} onClick={() => setSelectedJobId(item.id)} className={`rounded-lg border px-3 py-2 text-xs ${selectedJob?.id === item.id ? "border-indigo-500 bg-indigo-950/30 text-indigo-200" : "border-slate-800 text-slate-400"}`}>#{item.id} · {files[index]?.name || "arquivo"} · {item.status} {item.progress_percent}%</button>)}</div></div>}
+
+      {selectedJob && (
         <div className="space-y-4 rounded-xl border border-slate-800 bg-[#0b101c]/40 p-5">
-          <div className="flex items-center justify-between gap-3"><div><div className="text-xs text-slate-500">Job #{job.id}</div><div className="text-sm font-medium text-white">{job.stage}</div></div><div className="text-sm text-indigo-300">{job.progress_percent}%</div></div>
-          <div className="h-2 overflow-hidden rounded-full bg-slate-900"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${job.progress_percent}%` }} /></div>
-          {job.progress_message && <p className="text-xs text-slate-400">{job.progress_message}</p>}
-          {job.status === "failed" && <div className="rounded-lg border border-rose-900/50 bg-rose-950/20 p-3 text-sm text-rose-300">{job.error_message || job.error_code || "Falha na transcrição"}</div>}
-          <TranscriptionResult job={job} />
+          <div className="flex items-center justify-between gap-3"><div><div className="text-xs text-slate-500">Job #{selectedJob.id}</div><div className="text-sm font-medium text-white">{selectedJob.stage}</div></div><div className="text-sm text-indigo-300">{selectedJob.progress_percent}%</div></div>
+          <div className="h-2 overflow-hidden rounded-full bg-slate-900"><div className="h-full bg-indigo-500 transition-all" style={{ width: `${selectedJob.progress_percent}%` }} /></div>
+          {selectedJob.progress_message && <p className="text-xs text-slate-400">{selectedJob.progress_message}</p>}
+          {selectedJob.status === "failed" && <div className="rounded-lg border border-rose-900/50 bg-rose-950/20 p-3 text-sm text-rose-300">{selectedJob.error_message || selectedJob.error_code || "Falha na transcrição"}</div>}
+          <TranscriptionResult job={selectedJob} />
         </div>
       )}
     </div>
