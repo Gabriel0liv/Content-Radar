@@ -12,6 +12,7 @@ from src.repositories.speech_jobs import SpeechJobRepository
 from src.schemas.speech_jobs import SpeechSttJobCreate, SpeechTtsJobCreate
 from src.services.speech_assets_service import SpeechAssetsService
 from src.services.speech_presets_service import SpeechPresetsService
+from src.services.speech_speaker_profiles_service import SpeechSpeakerProfilesService
 from src.services.speech_storage import SpeechStorage
 from speech_worker.tts.ptbr_text import analyze_ptbr_text, normalize_ptbr_text
 
@@ -31,6 +32,7 @@ class SpeechJobsService:
         self.db = db
         self.repo = SpeechJobRepository(db)
         self.presets = SpeechPresetsService(db)
+        self.speaker_profiles = SpeechSpeakerProfilesService(db)
         self.storage = storage or SpeechStorage(os.getenv("SPEECH_DATA_ROOT", "data/speech"))
         self.assets = SpeechAssetsService(self.storage)
 
@@ -51,6 +53,8 @@ class SpeechJobsService:
             "num_speakers": base.get("num_speakers"),
             "min_speakers": base.get("min_speakers"),
             "max_speakers": base.get("max_speakers"),
+            "speaker_profile": None,
+            "speaker_mapping": {},
             "vad_onset": base.get("vad_onset", 0.5),
             "vad_offset": base.get("vad_offset", 0.363),
             "chunk_size": base.get("chunk_size", 30),
@@ -66,6 +70,12 @@ class SpeechJobsService:
         resolved["min_speakers"] = None if request.num_speakers is not None else request.min_speakers
         resolved["max_speakers"] = None if request.num_speakers is not None else request.max_speakers
         resolved["initial_prompt"] = request.initial_prompt if request.initial_prompt is not None else resolved["initial_prompt"]
+        if request.speaker_profile:
+            profile = self.speaker_profiles.get_profile(request.speaker_profile)
+            if profile is None:
+                raise ValueError("Perfil de speakers não encontrado")
+            resolved["speaker_profile"] = profile.name
+            resolved["speaker_mapping"] = dict(profile.mapping_json or {})
         if request.quiet_speech:
             resolved["vad_onset"] = 0.1
             resolved["vad_offset"] = 0.1
