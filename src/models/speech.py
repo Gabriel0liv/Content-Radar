@@ -72,6 +72,19 @@ class SpeechPreset(Base):
     )
 
 
+class SpeechSpeakerProfile(Base):
+    __tablename__ = "speech_speaker_profiles"
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    name = Column(Text, nullable=False, unique=True)
+    mapping_json = Column(JSONB, nullable=False, server_default="{}")
+    notes = Column(Text, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (Index("idx_speech_speaker_profiles_name", name),)
+
+
 class SpeechArtifact(Base):
     __tablename__ = "speech_artifacts"
 
