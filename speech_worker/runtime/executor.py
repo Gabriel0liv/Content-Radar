@@ -66,6 +66,7 @@ class SpeechExecutor:
             payload = result.model_dump(mode="json")
             segment_dicts = [segment.model_dump(mode="json") for segment in result.segments]
             cards = cards_from_segments(segment_dicts)
+            speaker_map = dict(config.speaker_mapping or {})
             requested_formats = {
                 part.lower()
                 for part in config.formats.split()
@@ -74,9 +75,9 @@ class SpeechExecutor:
             artifacts: list[dict] = []
             renderers = {
                 "json": lambda: render_json(payload),
-                "txt": lambda: render_txt(segment_dicts),
-                "srt": lambda: render_srt(cards, show_speaker=result.diarized),
-                "vtt": lambda: render_vtt(cards, show_speaker=result.diarized),
+                "txt": lambda: render_txt(segment_dicts, speaker_map=speaker_map),
+                "srt": lambda: render_srt(cards, speaker_map=speaker_map, show_speaker=result.diarized),
+                "vtt": lambda: render_vtt(cards, speaker_map=speaker_map, show_speaker=result.diarized),
             }
             for format_name in ("json", "txt", "srt", "vtt"):
                 if format_name not in requested_formats:
@@ -96,7 +97,13 @@ class SpeechExecutor:
                 )
 
             progress_callback("finalizing", 99, "Finalizando transcrição")
-            return {"kind": "stt", "normalized": payload, "artifacts": artifacts}
+            return {
+                "kind": "stt",
+                "normalized": payload,
+                "speaker_profile": config.speaker_profile,
+                "speaker_mapping": speaker_map,
+                "artifacts": artifacts,
+            }
         except SttCancelled as exc:
             raise JobCancelled(str(exc)) from exc
         finally:
