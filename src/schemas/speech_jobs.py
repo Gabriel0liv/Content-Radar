@@ -30,6 +30,7 @@ class SpeechSttJobCreate(BaseModel):
     num_speakers: int | None = Field(default=None, ge=1)
     min_speakers: int | None = Field(default=None, ge=1)
     max_speakers: int | None = Field(default=None, ge=1)
+    speaker_profile: str | None = Field(default=None, min_length=1, max_length=200)
     quiet_speech: bool = False
     initial_prompt: str | None = Field(default=None, max_length=8000)
     reference_source_id: int | None = None
