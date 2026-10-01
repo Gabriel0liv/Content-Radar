@@ -1,6 +1,7 @@
 import type {
   SpeechArtifact,
   SpeechCapabilities,
+  SpeechDashboard,
   SpeechDiagnostics,
   SpeechJob,
   SpeechOperation,
@@ -42,6 +43,7 @@ function append(form: FormData, key: string, value: unknown) {
 
 export const speechApi = {
   getStatus: () => request<SpeechStatus>("/speech/status"),
+  getDashboard: () => request<SpeechDashboard>("/speech/dashboard"),
   getCapabilities: () => request<SpeechCapabilities>("/speech/capabilities"),
   getDiagnostics: () => request<SpeechDiagnostics>("/speech/diagnostics"),
   getSettings: () => request<SpeechSettings>("/speech/settings"),
