@@ -50,6 +50,44 @@ export type SpeechStatus = {
   };
 };
 
+export type SpeechDashboardJob = {
+  id: number;
+  operation: SpeechOperation;
+  status: SpeechJobStatus;
+  stage: string;
+  progress_percent: number;
+  label: string;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  finished_at: string | null;
+};
+
+export type SpeechDashboard = {
+  transcriptions_today: number;
+  tts_today: number;
+  total_jobs: number;
+  jobs_completed: number;
+  jobs_failed: number;
+  success_rate: number;
+  available_voices: number;
+  storage_used_bytes: number;
+  queue: { queued: number; running: number };
+  recent_jobs: SpeechDashboardJob[];
+  active_job: SpeechDashboardJob | null;
+  system_health: {
+    worker_online: boolean;
+    cuda: boolean;
+    gpu_name: string | null;
+    ffmpeg: boolean;
+    espeak: boolean;
+    whisperx: boolean;
+    diarization: boolean;
+    hf_token_configured: boolean;
+    tts_engines: Array<Record<string, any> | string>;
+  };
+};
+
 export type SpeechCapabilities = {
   worker_online: boolean;
   worker_id: string | null;
